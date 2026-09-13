@@ -118,7 +118,13 @@ All found while implementing; all should be corrected in v1.1.
 ## Status
 
 Phases 0-6 complete. `bench3` records **zero inter-robot collisions across 8
-seeds with every run finishing**, which is the Phase 6 gate and the AC-2 target.
+seeds with every run finishing** -- the Phase 6 gate and the AC-2 target.
+
+**That result is scoped to bench3 as configured: 3 AMRs, 12 tasks, 4 waves.** It
+does not yet generalise. Measured at 6 AMRs with 36 tasks in a single wave,
+Configuration B records 5 collisions, and runs of both configurations sometimes
+fail to finish. So `visual30` and `scale100` would very likely collide today, and
+AC-2 is met only at the fleet size the problem statement mandates as a minimum.
 
 Not yet met, and known:
 
@@ -130,4 +136,7 @@ Not yet met, and known:
   baseline is supposed to be handicapped by (Phase 11).
 - **TC-3's ring case deadlocks** -- see SRS defect 5 above. Junction arbitration
   and single-corridor arbitration are each correct and neither is sufficient.
+- **Safety and liveness are unverified above 3 AMRs** (5 collisions and
+  non-finishing runs at 6). This outranks the AC-3 margin: a makespan figure
+  measured on a fleet that sometimes collides is not evidence of anything.
 - **`visual30` has never run**: Webots is not installed.
