@@ -165,6 +165,27 @@ All found while implementing; all should be corrected in v1.1.
     outranked cannot make it leave. Observed on seed 6: r2 outranked r3 and entered
     e4 while r3 was 4524 mm of 6000 into it, and they closed to 492 mm. Resolved by
     treating an opposing occupant as a fact rather than a contender.
+12. **Appendix C's total order is applied to robots that cannot act, and its proof
+    does not cover them.** The proof takes a set of AMRs "in mutual conflict" and shows
+    a total order gives it a unique maximum, so exactly one proceeds and a cyclic wait
+    cannot form. Mutual conflict is doing unstated work there: it presumes every member
+    could take the resource next. Three cases break it, and each produced either a
+    collision or a cycle -- a robot already committed to a single-lane corridor
+    (defect 11), a robot standing in a junction's corner where it cannot step aside
+    (defect 10), and a robot queued behind another on the approach, which cannot reach
+    the resource at all until the one ahead moves.
+
+    That last one is a three-robot cycle on bench3 seed 28: r1 yielded the choke
+    corridor to r3 because r3 carried priority 100, while r3 was stuck behind r2 on the
+    approach; r2, at the mouth, yielded to r1. Every robot applied the order correctly.
+    Resolved by collapsing each approach to its nearest member before ranking
+    (`reservation.queue_heads`) -- **for ranking only**, since Appendix B's AVOID asks
+    the opposite question and needs every window, the whole queue having to pass before
+    the resource is free.
+
+    The SRS needs either a precondition on Appendix C -- that the order ranks only
+    robots able to take the resource next -- or an explicit rule that physical occupancy
+    is not subject to arbitration. The implementation now assumes the latter.
 
 ## Status
 
