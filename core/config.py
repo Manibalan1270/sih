@@ -162,9 +162,15 @@ work, and routes to a charger."""
 BATTERY_RESUME_PCT = 80
 """Appendix A: charge above which a CHARGING AMR returns to IDLE."""
 
-BATTERY_DRAIN_PER_MM_Q8 = q8(0.0004)
-"""Simulated drain in percentage points per millimetre travelled. 0.4%/m, so a
-full charge covers roughly 250 m of travel."""
+BATTERY_MM_PER_PERCENT = 2500
+"""Millimetres travelled per percentage point of charge: 0.4%/m, so a full charge
+covers roughly 250 m.
+
+Expressed as mm-per-percent rather than as a Q8 percent-per-mm weight on purpose.
+At a 20 ms tick a robot covers 16 mm, and 0.0004 percent per mm is 0.1 in Q8 --
+which rounds to zero, so the battery would never discharge at all. Accumulating
+distance and spending a whole percent each time the threshold is crossed keeps the
+arithmetic integer and exact at every tick rate."""
 
 # ---------------------------------------------------------------------------
 # Localization and confidence (FE-7)

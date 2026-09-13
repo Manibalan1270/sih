@@ -68,6 +68,44 @@ def reference_shortest_cost(graph: Graph, start: int, goal: int) -> int | None:
     return None
 
 
+class ReferencePlanner:
+    """Dijkstra route planner satisfying ``core.robot.RoutePlanner``.
+
+    Exists so the robot and engine can be exercised before core/planner_astar.py
+    is written, and afterwards as the independent implementation A* is checked
+    against. Dijkstra needs no heuristic, so it cannot share a bug with A*.
+    """
+
+    def __init__(self, graph: Graph, *, cost=None) -> None:
+        self.graph = graph
+        self._cost = cost or graph.nominal_cost_ms
+        self.calls = 0
+
+    def route(self, start: int, goal: int) -> list[int] | None:
+        self.calls += 1
+        if start == goal:
+            return [start]
+        best: dict[int, int] = {start: 0}
+        came: dict[int, int] = {}
+        queue: list[tuple[int, int]] = [(0, start)]
+        while queue:
+            cost, node = heapq.heappop(queue)
+            if node == goal:
+                path = [goal]
+                while path[-1] != start:
+                    path.append(came[path[-1]])
+                return list(reversed(path))
+            if cost > best.get(node, 1 << 60):
+                continue
+            for neighbour, edge_id in self.graph.neighbours(node):
+                new_cost = cost + self._cost(edge_id)
+                if new_cost < best.get(neighbour, 1 << 60):
+                    best[neighbour] = new_cost
+                    came[neighbour] = node
+                    heapq.heappush(queue, (new_cost, neighbour))
+        return None
+
+
 def to_networkx(graph: Graph):
     """Mirror a Graph into networkx for reference cross-checks.
 
