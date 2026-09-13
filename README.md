@@ -134,9 +134,29 @@ All found while implementing; all should be corrected in v1.1.
     covered extends 1200 mm each side of the node (derivation in
     `config.JUNCTION_FOOTPRINT_MM`, pinned by `tests/unit/test_geometry.py`). A
     yielding robot therefore outlives its own reservation and crosses the corner
-    unclaimed. **Open** -- it is the cause of every remaining bench3 failure at
-    3 AMRs, and the fix is to size the window from distance and renew it while the
-    robot is still inside the footprint.
+    unclaimed. **Mostly resolved**, in two halves: the claim now begins
+    JUNCTION_FOOTPRINT_MM before arrival instead of at arrival, and a robot that has
+    already crossed keeps claiming the junction until clear of the corner (arbitration
+    only ever looks at `next_node`, so it previously stopped claiming a junction the
+    instant it passed it -- while still standing in it). 3-AMR failures over 20 seeds
+    fell from 3 to 1, at a cost of 4.1% makespan.
+
+    Two findings are worth keeping. Sizing the window from the speed actually being
+    travelled is self-reinforcing and deadlocks -- a yielding robot drops to a third of
+    nominal, tripling its own claim, conflicting with more peers and yielding harder, so
+    the window is sized at nominal speed and the crawling case is handled by renewal
+    instead. And extending the claim *forwards* past arrival, though it is the
+    physically complete statement, holds every junction three times as long and turned
+    one failure back into three.
+
+    **Still open:** a robot that halts inside the corner. `_limit_for_clearance` stops
+    dead at FOLLOWING_DISTANCE_MM, which can bring a robot to rest 800 mm from a
+    junction -- inside the footprint -- and the geometry then works against it, because
+    a second robot departing that junction gets *closer* as it leaves (separation falls
+    to 100 mm at 700 mm past). This is seed 19 and it is the same shape as the
+    YIELD_STANDOFF_MM defect: a robot must not come to rest inside a region it does not
+    own. A full fix needs entry to the corner conditional on being able to cross it
+    without stopping.
 11. **Nothing gives a robot already inside a single-lane corridor the right to
     finish traversing it.** FR-5.10 puts the decision at the last passing point and
     ranks the contenders by the Appendix C total order -- but that order is only
@@ -149,15 +169,16 @@ All found while implementing; all should be corrected in v1.1.
 ## Status
 
 Phases 0-7b complete. `bench3` at 3 AMRs is clean over **8 seeds** and fails
-**3 of 20**: one collision (seed 13), one deadlock (seed 14) and one run that does
-not finish inside 4,000,000 ms (seed 16).
+**1 of 20**: seed 19, which both stalls and records one collision. The junction-corner
+fix (defect 10) took this from 3 of 20.
 
 That distinction matters and the earlier wording here hid it. The Phase 6 gate was
 read as met because the first 8 seeds pass, and the same 8 seeds were used to clear
-Phase 7b. Widening to 20 shows AC-2 is **not** met at 3 AMRs. All three failures are
-SRS defect 10 above -- the junction-corner footprint -- in three guises: two robots
-converging in the corner unseen, the corner reading as headway and closing a wait-for
-cycle against a junction yield, and the congestion that follows from both.
+Phase 7b. Widening to 20 shows AC-2 is **not** met at 3 AMRs. Every failure seen at this
+fleet size has been SRS defect 10 -- the junction-corner footprint -- in one guise or
+another: two robots converging in the corner unseen, the corner reading as headway and
+closing a wait-for cycle against a junction yield, and a robot coming to rest inside a
+corner another robot is leaving. The first two are fixed; the last is seed 19.
 
 Both densities tried at 3 AMRs -- 12 tasks over 4 waves and 24 in a single wave --
 behave the same way. TC-3's single-lane ring clears.

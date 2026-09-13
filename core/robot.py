@@ -303,6 +303,12 @@ class Robot:
     _last_reroute_ms: int = -10_000
 
     _last_intent_ms: int = -10_000
+    _last_clearing_reserve_ms: int = -10_000
+    """When this robot last re-claimed the junction it is still clearing.
+
+    Kept separate from ``_last_intent_ms`` so the two rates stay independent: the
+    clearing claim is bounded by how long a corner takes to leave, not by the heartbeat
+    it happens to share a period with."""
     """When INTENT was last broadcast. Negative so the first tick emits one."""
 
     _drain_accumulator_mm: int = 0
@@ -1066,6 +1072,8 @@ class Robot:
         speed = self._follow_traffic_ahead(now_ms, speed, result)
         speed = self._limit_for_clearance(speed, result)
         self._last_speed_mm_s = speed
+        if self.arbiter is not None:
+            self._hold_junction_while_clearing(now_ms, result)
         result.command = MotionCommand(speed_mm_s=speed, target_node=self.next_node)
 
     def _follow_traffic_ahead(self, now_ms: int, speed: int, result: StepResult) -> int:
@@ -1428,6 +1436,56 @@ class Robot:
             return self._single_lane_edge_between(remaining[1], remaining[2])
         return None
 
+    def _time_to_cover_mm(self, distance_mm: int) -> int:
+        """How long ``distance_mm`` takes at the speed this robot is actually making.
+
+        Floored at the yield speed for the same reason ``_emit_intent`` floors its
+        ETAs: a halted robot would otherwise compute an unbounded time and claim a
+        junction forever. Integer throughout (CON-6).
+        """
+        speed = config.NOMINAL_SPEED_MM_S
+        if self._last_speed_mm_s < config.NOMINAL_SPEED_MM_S:
+            speed = max(config.YIELD_SPEED_MM_S, self._last_speed_mm_s)
+        return distance_mm * 1000 // speed
+
+    def _hold_junction_while_clearing(self, now_ms: int, result: StepResult) -> None:
+        """Keep claiming the junction just crossed until clear of its corner.
+
+        Arbitration only ever looks at ``next_node``, so the moment a robot passes a
+        junction it stops claiming it -- while still physically inside it. That is the
+        second half of SRS defect 10 and the half that actually collided: on seed 13
+        r2 was 951 mm past node 4 with no claim on it at all, and r1 turned into the
+        same corner. Nothing had gone wrong with the ranking; there was nothing left to
+        rank against.
+
+        Rate-limited to the INTENT period rather than sent every tick. A junction
+        crossing takes 1500 ms at nominal speed, which at a 20 ms tick would be 75
+        frames for one junction and would not survive NFR-1.12's budget; at the INTENT
+        period it is seven or eight, in line with the RESERVE traffic already emitted
+        while a conflict stands.
+
+        The direction is not on the wire (SRS defect 8) and does not need to be: peers
+        already hold this robot's approach from the implied claim it made while heading
+        for this node, and ``ReservationTable.record`` carries that forward onto an
+        explicit claim. So following traffic is still recognised as following.
+        """
+        if self.edge_id is None or self.progress_mm >= config.JUNCTION_FOOTPRINT_MM:
+            return
+        if not self.graph.node(self.current_node).is_junction:
+            return
+        if now_ms - self._last_clearing_reserve_ms < config.INTENT_PERIOD_MS:
+            return
+        self._last_clearing_reserve_ms = now_ms
+        remaining_mm = config.JUNCTION_FOOTPRINT_MM - self.progress_mm
+        result.outbox.append(
+            Reserve(
+                junction_id=self.current_node,
+                window_start_ms=now_ms,
+                window_end_ms=now_ms + self._time_to_cover_mm(remaining_mm),
+                priority=self.task_priority,
+            )
+        )
+
     def _arbitrate_ahead(self, now_ms: int, result: StepResult) -> int:
         """Run Appendix B for the junction ahead, and return the speed to command.
 
@@ -1447,7 +1505,37 @@ class Robot:
         if arrival_ms - now_ms > config.ARBITRATION_LOOKAHEAD_MS:
             return config.NOMINAL_SPEED_MM_S  # too far away to matter yet
 
-        window = crossing_window(arrival_ms=arrival_ms)
+        # Sized from the corner footprint at the speed actually being travelled, not
+        # from Appendix E's fixed 700 ms -- see crossing_window and SRS defect 10. The
+        # claim has to cover the whole time this robot is inside the corner, which
+        # starts JUNCTION_FOOTPRINT_MM before the node and ends the same distance past
+        # it. Re-derived every tick, so a robot that slows down widens its own claim
+        # and one that speeds up narrows it again.
+        # Sized at *nominal* speed deliberately, not at the speed being made. Sizing it
+        # from the actual speed is self-reinforcing and deadlocks: a robot that yields
+        # drops to a third of nominal, which triples its own claim, which conflicts with
+        # more peers, which makes it yield harder. Measured as three fresh stalls over
+        # 20 seeds. The claim here says "how long the corner takes to cross", a property
+        # of the junction; how long *this* robot will actually take when crawling is
+        # handled by _hold_junction_while_clearing, which renews as it goes.
+        # Widened *backwards* from arrival only, and deliberately not forwards.
+        #
+        # Backwards is what was missing: the robot is inside the corner from
+        # JUNCTION_FOOTPRINT_MM out, so a claim beginning at arrival says nothing about
+        # the stretch where it can actually collide. Adding it fixed the corner
+        # collision at 3 AMRs outright.
+        #
+        # Forwards was tried and costs more than it buys. Extending the claim past
+        # arrival to cover the departure is the physically complete statement -- the
+        # corner is occupied from entry to exit -- but it holds every junction for three
+        # times as long, and over 20 seeds it turned one failure back into three. The
+        # departure is covered instead by _hold_junction_while_clearing, which claims it
+        # only while a robot is really there rather than reserving it in advance.
+        corner_ms = config.JUNCTION_FOOTPRINT_MM * 1000 // config.NOMINAL_SPEED_MM_S
+        window = crossing_window(
+            arrival_ms=arrival_ms,
+            approach_ms=min(corner_ms, arrival_ms - now_ms),
+        )
         remaining = self.remaining_route
         decision = self.arbiter.arbitrate(
             junction=junction,

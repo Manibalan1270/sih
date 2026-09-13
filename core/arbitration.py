@@ -338,16 +338,25 @@ def crossing_window(
     *,
     arrival_ms: int,
     occupancy_ms: int = config.JUNCTION_OCCUPANCY_MS,
+    approach_ms: int = 0,
 ) -> Window:
     """The window a robot needs at a junction it will reach at ``arrival_ms``.
 
-    Occupancy is a fixed footprint-crossing time rather than a computed one. ASM-6
-    makes the fleet homogeneous in speed and size, so a robot crossing a junction
-    always takes the same time, and computing it per robot would imply a
-    heterogeneity the specification does not permit (and OI-4 records as out of
-    scope).
+    ``approach_ms`` extends the claim *backwards* from arrival, and ``occupancy_ms``
+    forwards from it. Both default to the Appendix E behaviour -- claim nothing before
+    arrival, hold for a fixed 700 ms after -- so a caller that knows nothing about its
+    own speed gets exactly what the specification says.
+
+    That default is not sufficient, and Appendix E's constant is the reason. It
+    justifies a fixed occupancy by ASM-6's homogeneous fleet, but ASM-6 makes the
+    *nominal* speed homogeneous and a yielding robot travels at a third of it. 700 ms
+    therefore buys 560 mm of clearance at nominal speed and 168 mm at yield speed,
+    against a junction footprint extending JUNCTION_FOOTPRINT_MM either side. The
+    specification states the occupancy as a time; the conflict it must prevent is a
+    distance. A caller that knows its own speed should pass both arguments computed
+    from that distance, which is what ``Robot._arbitrate_ahead`` does.
     """
-    return Window(arrival_ms, arrival_ms + occupancy_ms)
+    return Window(arrival_ms - approach_ms, arrival_ms + occupancy_ms)
 
 
 def unique_winner(contenders: list[tuple[int, int]]) -> tuple[int, int] | None:
