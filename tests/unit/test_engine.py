@@ -222,13 +222,42 @@ class TestMetrics:
     ) -> None:
         """FR-10.3: total stopped time is a reported metric, and it must not be
         inferred from position deltas -- a yielding robot is moving slowly, which
-        is not the same as stopped."""
+        is not the same as stopped.
+
+        Note an idle robot is not necessarily a stationary one: an idle robot standing
+        on a junction withdraws to a parking bay, because leaving it there blocks
+        every peer that needs the junction. So stopped time is checked on a robot
+        already parked on a spur, which genuinely has nowhere to go.
+        """
         robots = fleet_of(benchmark_map, 2)
+        parked = robots[1]
+        parked.current_node = benchmark_map.parking_nodes[0]
         engine = Engine(graph=benchmark_map, robots=robots)
         robots[0].accept_task(task(1, 1, 5), 0)
         engine.run_ticks(60)
         assert robots[0].metrics.moving_ms > 0
-        assert robots[1].metrics.stopped_ms > 0, "an idle robot should book stopped time"
+        assert parked.metrics.stopped_ms > 0, "a parked robot should book stopped time"
+        assert parked.metrics.distance_mm == 0
+
+    def test_an_idle_robot_does_not_squat_on_a_junction(
+        self, benchmark_map: Graph
+    ) -> None:
+        """Nothing in the SRS says where a robot idles, and one left on a junction is
+        a permanent obstacle: peers stop at their following distance and wait for a
+        robot that has no reason to move. Observed as a fleet that never finished."""
+        # One robot, so the check is about the withdrawal itself and not about
+        # queueing for a bay behind other robots.
+        squatter = fleet_of(benchmark_map, 3)[0]
+        squatter.current_node = 2  # L_MID, a busy junction
+        engine = Engine(graph=benchmark_map, robots=[squatter])
+        engine.run(
+            max_ms=200_000,
+            until=lambda e: not e.graph.node(squatter.current_node).is_junction,
+        )
+        assert not benchmark_map.node(squatter.current_node).is_junction, (
+            f"an idle robot stayed on junction {squatter.current_node}"
+        )
+        assert squatter.current_node in benchmark_map.parking_nodes
 
 
 class TestCollisionDetection:

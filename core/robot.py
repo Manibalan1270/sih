@@ -38,10 +38,14 @@ from communication.messages import (
     Intent,
     Message,
     MessageType,
+    Reserve,
 )
 from core import config
+from core.arbitration import Arbiter, Outcome, crossing_window, outranks
 from core.auction import NO_WINNER, Auctioneer
 from core.graph import Graph
+from core.peers import PeerTable
+from core.reservation import ReservationTable, Window
 from core.state_machine import Event, State, StateMachine
 from core.task import Leg, Task, TaskQueue, TaskState
 
@@ -181,6 +185,30 @@ class Robot:
     """Whether a task in a given zone may be bid on (FR-4.14, FR-9.3). Injected so
     the robot never has to know how the warehouse is partitioned."""
 
+    reservations: ReservationTable = field(default_factory=ReservationTable)
+    """This robot's own view of who holds which junction (FR-5.1)."""
+
+    peers: PeerTable = field(default_factory=PeerTable)
+    """Neighbours heard from within the liveness window (FR-1.4)."""
+
+    arbiter: Arbiter | None = None
+    """Junction arbitration (FE-5). None disables it, which is how Configuration A
+    runs the same robot object with no coordination at all (FR-10.5)."""
+
+    forward_clearance_mm: int = 1 << 30
+    """Distance to the nearest obstacle directly ahead, from the forward sensor
+    (IF-2.4). Written every tick by whatever is driving the robot -- the simulator
+    here, a real sensor on hardware. Defaults to "clear"."""
+
+    position_confident: bool = True
+    """FR-5.14 / NFR-2.3. Phase 10 drives this from core/localization.py; until then
+    a robot always knows where it is."""
+
+    yielding_until_ms: int = 0
+    """When the conflict this robot yielded to is expected to clear. YIELD is left
+    on CONFLICT_CLEARED once this passes (Appendix A: an excursion from MOVING that
+    returns to it directly)."""
+
     route: list[int] = field(default_factory=list)
     route_index: int = 0
     """Index in ``route`` of ``current_node``. The remaining route is
@@ -201,6 +229,14 @@ class Robot:
     IDLE -> PLANNING -> IDLE forever, re-failing the same plan every tick. The
     auction layer drains this list and re-announces, so the task gets another
     chance from another robot -- or from this one once the blockage clears."""
+
+    _avoid_edges: set[int] = field(default_factory=set)
+    """Edges this robot is temporarily avoiding after losing a junction contest
+    (Appendix B's AVOID, second branch).
+
+    Local to the robot, and deliberately not a graph blockage: the aisle is
+    perfectly passable, it is merely contended, and marking the graph would make one
+    robot's yield everyone's problem. Cleared once the yield resolves."""
 
     _last_intent_ms: int = -10_000
     """When INTENT was last broadcast. Negative so the first tick emits one."""
@@ -244,8 +280,34 @@ class Robot:
         length = max(1, self.graph.length_mm(self.edge_id))
         return min(config.Q8_ONE, (self.progress_mm * config.Q8_ONE) // length)
 
+    def footprint_mm(self) -> tuple[int, int]:
+        """Position including lane offset, for the geometric collision check.
+
+        Distinct from ``position_mm``, which returns the aisle centre line and is
+        what the dashboard animates. On a bidirectional aisle robots keep to their
+        own side (ASM-5), so opposing traffic is laterally separated and does not
+        collide; on a single-lane aisle there is only the centre line, so a head-on
+        is a real overlap. Collapsing the two would either invent collisions that
+        cannot happen or hide ones that can.
+        """
+        x, y = self.position_mm()
+        if self.edge_id is None or self.next_node is None:
+            return x, y
+        edge = self.graph.edge(self.edge_id)
+        if edge.single_lane:
+            return x, y
+
+        here = self.graph.node(self.current_node)
+        there = self.graph.node(self.next_node)
+        span_x, span_y = there.x_mm - here.x_mm, there.y_mm - here.y_mm
+        length = max(1, self.graph.length_mm(self.edge_id))
+        # Right-hand perpendicular, scaled to the lane offset. Integer throughout.
+        offset_x = -span_y * config.AISLE_LANE_OFFSET_MM // length
+        offset_y = span_x * config.AISLE_LANE_OFFSET_MM // length
+        return x + offset_x, y + offset_y
+
     def position_mm(self) -> tuple[int, int]:
-        """Interpolated position, for the collision check and the dashboard."""
+        """Interpolated position on the aisle centre line, for the dashboard."""
         node = self.graph.node(self.current_node)
         if self.edge_id is None or self.next_node is None:
             return node.x_mm, node.y_mm
@@ -300,6 +362,12 @@ class Robot:
         """
         result = StepResult(command=MotionCommand.hold())
 
+        # FR-5.11: claims lapse on their own, with no release message. Done before
+        # anything reads the table, so a decision is never taken against a window
+        # that has already passed.
+        self.reservations.expire(now_ms)
+        self._reap_peers(now_ms, result)
+
         if inbox:
             self._handle_inbox(inbox, now_ms, result)
         if self.auctioneer is not None:
@@ -350,7 +418,9 @@ class Robot:
             if auctioneer is None:
                 continue
             if message.type is MessageType.INTENT:
-                self._on_peer_intent(message.sender, payload, now_ms, result)
+                self._on_peer_intent(message.sender, payload, message.timestamp_ms, now_ms, result)
+            elif message.type is MessageType.RESERVE:
+                self._on_peer_reserve(message.sender, payload, now_ms)
             elif message.type is MessageType.COMPLETE:
                 self._on_peer_complete(message.sender, payload.task_id, now_ms, result)
             elif message.type is MessageType.ANNOUNCE:
@@ -414,14 +484,42 @@ class Robot:
         left = max(0, length - self.progress_mm)
         return self.graph.nominal_cost_ms(self.edge_id) * left // length
 
-    def _on_peer_intent(self, sender: int, payload: Intent, now_ms: int, result: StepResult) -> None:
+    def _on_peer_intent(
+        self,
+        sender: int,
+        payload: Intent,
+        sent_at_ms: int,
+        now_ms: int,
+        result: StepResult,
+    ) -> None:
         """React to a peer's heartbeat.
 
-        At this phase that means one thing: healing a duplicate task holding that a
-        lost CLAIM left behind (FR-4.8). Phase 6 adds reservation-table and traffic
-        model updates from the same frame, which is what FR-1.8 means by one frame
-        updating both.
+        FR-1.8: one received INTENT updates the reservation table *and* the peer
+        table from the same frame, with no second message required. Phase 8 adds the
+        traffic-model update from the same call, which is the third consumer.
         """
+        self.peers.observe(
+            robot_id=sender,
+            now_ms=now_ms,
+            current_node=payload.current_node,
+            priority=payload.priority,
+            state=payload.state,
+            battery_pct=payload.battery_pct,
+            held_task_id=payload.held_task_id,
+        )
+        if self.arbiter is not None:
+            self.reservations.record_intent(
+                robot_id=sender,
+                priority=payload.priority,
+                junctions=payload.next_nodes,
+                eta_ms=payload.eta_ms,
+                sent_at_ms=sent_at_ms,
+                now_ms=now_ms,
+                is_junction=lambda node: self.graph.node(node).is_junction,
+                current_node=payload.current_node,
+                corridor_of=self._single_lane_edge_between,
+            )
+
         held = payload.held_task_id
         if held < 0 or not self.queue.holds(held):
             return
@@ -462,6 +560,48 @@ class Robot:
         result.notes.append(
             f"r{sender} already completed task {task_id}; dropping my copy"
         )
+
+    def _single_lane_edge_between(self, u: int, v: int) -> int | None:
+        """Edge id if ``u -> v`` is a single-lane corridor, else None."""
+        try:
+            edge_id = self.graph.edge_between(u, v)
+        except KeyError:
+            return None
+        if edge_id is None:
+            return None
+        return edge_id if self.graph.edge(edge_id).single_lane else None
+
+    def _on_peer_reserve(self, sender: int, payload: Reserve, now_ms: int) -> None:
+        """Record a peer's explicit junction claim (FR-5.1, FR-5.5)."""
+        if self.arbiter is None:
+            return
+        self.reservations.record_reserve(
+            robot_id=sender,
+            priority=payload.priority,
+            junction=payload.junction_id,
+            window_start_ms=payload.window_start_ms,
+            window_end_ms=payload.window_end_ms,
+            now_ms=now_ms,
+        )
+
+    def _reap_peers(self, now_ms: int, result: StepResult) -> None:
+        """Declare silent peers lost and act on it (FR-1.5, FR-6.5).
+
+        Three consequences, all local: expire the peer's reservations so the fleet
+        stops avoiding junctions nobody is coming to, forget its sequence state so a
+        rebooted robot is not mistaken for a replay, and re-announce the task it was
+        holding so the work is not stranded on a dead robot.
+        """
+        for lost in self.peers.reap(now_ms):
+            removed = self.reservations.drop_robot(lost.robot_id)
+            result.notes.append(
+                f"{lost}; expired {removed} of its reservations (FR-6.5)"
+            )
+            if lost.held_task_id >= 0 and self.auctioneer is not None:
+                # Forget the auction outcome so the task can be won again. Without
+                # this the robot would remember it as settled against a robot that no
+                # longer exists and never bid on it.
+                self.auctioneer.forget(lost.held_task_id)
 
     def _drop_task(self, task_id: int, now_ms: int, *, hand_back: bool) -> None:
         """Let go of a task.
@@ -646,6 +786,81 @@ class Robot:
         if self.queue:
             self.machine.fire(Event.QUEUE_HAS_WORK, now_ms)
             result.notes.append(f"queued work: {self.queue.current}")
+            return
+        self._vacate_junction(now_ms, result)
+
+    def _vacate_junction(self, now_ms: int, result: StepResult) -> None:
+        """Move off a junction when idle, and keep moving until clear.
+
+        **Not in the SRS, and it has to be.** Appendix A has IDLE broadcasting INTENT
+        and leaving only on winning an auction; nothing says where a robot idles. An
+        idle robot standing on a junction is a permanent obstacle: peers approaching
+        it stop at their following distance (IF-2.4) and wait for a robot that has no
+        reason to move, forever.
+
+        That is a genuine deadlock and Appendix C does not cover it. The proof is
+        about a set of AMRs "in mutual conflict" over junctions and shows exactly one
+        does not yield -- but a robot with no task is not a contender at all, so the
+        total order never ranks it and it never yields to anyone. Observed directly:
+        two robots held 1200 mm short of L_MID while a third sat on it, idle, and the
+        run never finished.
+
+        Real warehouses solve this with staging areas, and the map already has the
+        nodes for it -- depots and chargers are marked non-junction precisely because
+        nothing crosses there. So an idle robot withdraws to the nearest one.
+        """
+        if not self.graph.node(self.current_node).is_junction:
+            return  # already parked somewhere harmless
+
+        # The test is "nothing left to follow", not "no route". A completed route
+        # leaves a stale single-node remainder behind, which is non-empty and would
+        # make an idle robot decide it was already on its way somewhere. It then sat
+        # on the junction indefinitely with two robots queued behind it.
+        if self.next_node is None:
+            parking = self._nearest_parking_node()
+            if parking is None or parking == self.current_node:
+                return
+            route = self.planner.route(self.current_node, parking)
+            if route is None or len(route) < 2:
+                return
+            self._adopt_route(route)
+            result.notes.append(
+                f"idle on junction {self.current_node}; withdrawing to {parking}"
+            )
+
+        if self.next_node is None:
+            return
+        speed = self._limit_for_clearance(config.NOMINAL_SPEED_MM_S, result)
+        result.command = MotionCommand(speed_mm_s=speed, target_node=self.next_node)
+
+    def _nearest_parking_node(self) -> int | None:
+        """Closest free bay where standing still obstructs nobody.
+
+        Occupancy comes from the peer table, so a robot avoids a bay another robot is
+        already in or heading for. Simply taking the nearest bay concentrates the
+        whole idle fleet on one node, and a bay is a dead-end spur that holds one --
+        the queue behind it then blocks the aisle, including for a robot whose task is
+        at that very node. Observed as a jam at the depot with two robots stacked on
+        the approach.
+
+        Falls back to the nearest bay when all are taken: standing in a queue for a
+        bay is still better than standing on a junction.
+        """
+        bays = list(self.graph.parking_nodes)
+        if not bays:
+            return None
+        taken = {peer.current_node for peer in self.peers.peers.values()}
+        taken |= {
+            reservation.junction
+            for junction_claims in self.reservations.entries.values()
+            for reservation in junction_claims.values()
+        }
+        free = [bay for bay in bays if bay not in taken]
+        pool = free or bays
+        return min(
+            pool,
+            key=lambda node: (self.planner.travel_cost(self.current_node, node), node),
+        )
 
     def _step_planning(self, now_ms: int, result: StepResult) -> None:
         task = self.task
@@ -682,14 +897,307 @@ class Robot:
             self._finish_leg(now_ms, result)
             return
 
-        # Phase 6 inserts arbitration here: detect a conflict on the junction
-        # ahead, and either RESERVE or fire CONFLICT_LOST to enter YIELD.
-        speed = (
-            config.YIELD_SPEED_MM_S
-            if self.state is State.YIELD
-            else config.NOMINAL_SPEED_MM_S
-        )
+        speed = config.NOMINAL_SPEED_MM_S
+        if self.arbiter is not None:
+            corridor_speed = self._arbitrate_corridor(now_ms, result)
+            if corridor_speed is not None:
+                result.command = MotionCommand(
+                    speed_mm_s=corridor_speed, target_node=self.next_node
+                )
+                return
+            speed = self._arbitrate_ahead(now_ms, result)
+        elif self.state is State.YIELD:
+            speed = config.YIELD_SPEED_MM_S
+
+        speed = self._limit_for_clearance(speed, result)
         result.command = MotionCommand(speed_mm_s=speed, target_node=self.next_node)
+
+    def _limit_for_clearance(self, speed: int, result: StepResult) -> int:
+        """Cap speed for what the forward sensor sees (IF-2.4, FR-6.6).
+
+        Reactive and unconditional: it applies whatever arbitration decided, because
+        a robot that has won a junction still must not drive into the back of one
+        that has not moved. This is the one place emergency braking *is* the right
+        answer -- FR-6.6 reserves it for obstacles, and something physically in the
+        way is an obstacle whether or not it is a fleet member.
+        """
+        if self.forward_clearance_mm >= config.FOLLOWING_DISTANCE_MM * 2:
+            return speed
+        if self.forward_clearance_mm <= config.FOLLOWING_DISTANCE_MM:
+            if speed > 0:
+                result.notes.append(
+                    f"holding: {self.forward_clearance_mm} mm clearance ahead"
+                )
+            return 0
+        return min(speed, config.YIELD_SPEED_MM_S)
+
+    def _arbitrate_corridor(self, now_ms: int, result: StepResult) -> int | None:
+        """FR-5.10: decide at the last passing point before a single-lane corridor.
+
+        Returns a speed to command if the corridor governs this tick, or None to fall
+        through to ordinary junction arbitration.
+
+        This is checked *only at the entry node*, with the robot not yet committed.
+        Once inside there is no alternative edge and no room to pass, so a decision
+        taken later has no outcome available but a head-on standoff -- which is
+        exactly what FR-5.10 exists to forbid and TC-2 tests.
+
+        Junction arbitration cannot substitute. Two robots entering from opposite
+        ends each want the *far* junction, so they never contend for the same one and
+        both proceed. With junction arbitration alone every remaining collision on
+        the benchmark map was a head-on in the choke corridor.
+        """
+        assert self.arbiter is not None
+        corridor = self._corridor_ahead()
+        if corridor is None:
+            return None
+
+        traverse_ms = self.graph.nominal_cost_ms(corridor)
+        entry_ms = 0 if corridor == self.edge_id else self._remaining_on_current_edge_ms()
+        window = Window(
+            now_ms + entry_ms,
+            now_ms + entry_ms + traverse_ms + config.JUNCTION_OCCUPANCY_MS,
+        )
+        # The conflict set spans the corridor *and* both its endpoint junctions.
+        #
+        # This is what keeps Appendix C's proof applicable. The proof is about one set
+        # of AMRs in mutual conflict under one total order, and shows it has a unique
+        # maximum. Rank the corridor and its junctions separately and that premise
+        # fails: observed directly, r1 yielded junction C_WEST to r3 while r3 yielded
+        # the corridor to r1 -- a cyclic wait between two robots, each correctly
+        # applying the total order to a different resource. Neither ever moved.
+        #
+        # Treating the corridor and the junctions it joins as a single resource
+        # restores a single conflict set, and with it the unique maximum.
+        edge = self.graph.edge(corridor)
+        # Which end we enter by. Already on the corridor: the node behind us.
+        # Approaching it: the node we are heading for, which is its mouth.
+        entry_node = self.current_node if corridor == self.edge_id else self.next_node
+        if entry_node not in (edge.u, edge.v):
+            entry_node = -1  # unknown; fall back to treating every claim as opposing
+        conflicts = self.reservations.corridor_conflicts(
+            corridor, window, exclude_robot=self.robot_id, from_node=entry_node
+        )
+        route = self.remaining_route
+        exit_node = edge.other_end(entry_node) if entry_node >= 0 else edge.v
+        beyond = route[2] if len(route) >= 3 else -1
+
+        # Which junctions still lie ahead. Once on the corridor the entry junction is
+        # behind us and must be left out: asking about a node already passed compares
+        # our position against robots still approaching it, and they legitimately
+        # outrank us for a junction we no longer want. That put a robot inside the
+        # corridor into a permanent yield to a robot queued behind it.
+        endpoints: list[tuple[int, int, int]] = []
+        if corridor != self.edge_id and entry_node >= 0:
+            endpoints.append((entry_node, self.current_node, exit_node))
+            beyond = route[3] if len(route) >= 4 else -1
+        endpoints.append((exit_node, entry_node, beyond))
+
+        for endpoint, entering_from, leaving_to in endpoints:
+            conflicts += self.reservations.conflicts(
+                endpoint,
+                window,
+                exclude_robot=self.robot_id,
+                from_node=entering_from,
+                to_node=leaving_to,
+            )
+        # NOTE (open, Phase 7): a *ring* of distinct single-lane corridors can still
+        # deadlock, and Appendix C's proof does not cover it. The proof concerns one
+        # conflict set under one total order and shows it has a unique maximum; a cycle
+        # of separate corridors defeats that, because each robot is the rightful winner
+        # of the segment it wants while being blocked by a different robot holding the
+        # next. The loop map provokes it and does not clear.
+        #
+        # The fix is sequence-level reservation -- hold the whole contended chain before
+        # entering any of it, per [R8] -- not a local test. A "do not enter unless your
+        # exit is clear" rule was tried and is too blunt: it also refuses entry behind a
+        # peer that is about to leave, which cost bench3 three of six runs.
+        if not conflicts:
+            if self.state is State.YIELD:
+                self.machine.fire_if_possible(Event.CONFLICT_CLEARED, now_ms)
+                result.notes.append(f"corridor e{corridor} clear; entering")
+            return self._limit_for_clearance(config.NOMINAL_SPEED_MM_S, result)
+
+        rival = max(conflicts, key=lambda held: held.ranking_key())
+        if outranks(self.task_priority, self.robot_id, rival.priority, rival.robot_id):
+            if self.state is State.YIELD:
+                self.machine.fire_if_possible(Event.CONFLICT_CLEARED, now_ms)
+            self.metrics.yields_won += 1
+            result.outbox.append(
+                Reserve(
+                    junction_id=self.next_node,
+                    window_start_ms=window.start_ms,
+                    window_end_ms=window.end_ms,
+                    priority=self.task_priority,
+                )
+            )
+            # Returning a speed rather than None deliberately: this decision governs
+            # the tick. Falling through to junction arbitration would rank the same
+            # contenders again over a different resource, which is precisely how the
+            # cyclic wait above arises.
+            return self._limit_for_clearance(config.NOMINAL_SPEED_MM_S, result)
+
+        # Lost. Hold short of the corridor -- the last passing point. Not emergency
+        # braking: the robot has not entered, and stopping short of a corridor is
+        # what a human driver does at a passing place.
+        if self.state is not State.YIELD:
+            if self.machine.fire_if_possible(Event.CONFLICT_LOST, now_ms):
+                self.metrics.yields_lost += 1
+                result.notes.append(
+                    f"corridor e{corridor} held by r{rival.robot_id} "
+                    f"(p{rival.priority}); waiting at the last passing point (FR-5.10)"
+                )
+        return 0
+
+    def _corridor_ahead(self) -> int | None:
+        """The single-lane corridor this robot is about to enter, if any.
+
+        Looks one step further than the current edge, because FR-5.10 puts the
+        decision at the last passing point *preceding* the corridor -- the node
+        before it, where an alternative edge still exists. Deciding once already
+        inside leaves no outcome available but a head-on standoff.
+
+        Returns None once committed: past ENTRY_COMMIT_MM there is nothing to decide,
+        and continuing to arbitrate would have a robot stop dead in a corridor it has
+        already entered, blocking it for everyone.
+        """
+        if self.edge_id is None:
+            return None
+        if self.graph.edge(self.edge_id).single_lane:
+            return None if self.progress_mm > config.ENTRY_COMMIT_MM else self.edge_id
+        remaining = self.remaining_route
+        if len(remaining) >= 3:
+            return self._single_lane_edge_between(remaining[1], remaining[2])
+        return None
+
+    def _arbitrate_ahead(self, now_ms: int, result: StepResult) -> int:
+        """Run Appendix B for the junction ahead, and return the speed to command.
+
+        Re-run every tick rather than once on approach. The reservation table changes
+        as peers broadcast, so a decision taken 200 ms ago may no longer hold -- and
+        Appendix B's AVOID step explicitly says to recompute ETAs and retry DETECT
+        after shedding speed.
+        """
+        assert self.arbiter is not None
+        junction = self.next_node
+        assert junction is not None
+
+        if not self.graph.node(junction).is_junction:
+            return config.NOMINAL_SPEED_MM_S  # nothing crosses here
+
+        arrival_ms = now_ms + self._remaining_on_current_edge_ms()
+        if arrival_ms - now_ms > config.ARBITRATION_LOOKAHEAD_MS:
+            return config.NOMINAL_SPEED_MM_S  # too far away to matter yet
+
+        window = crossing_window(arrival_ms=arrival_ms)
+        remaining = self.remaining_route
+        decision = self.arbiter.arbitrate(
+            junction=junction,
+            window=window,
+            my_priority=self.task_priority,
+            table=self.reservations,
+            from_node=self.current_node,
+            to_node=remaining[2] if len(remaining) >= 3 else -1,
+            can_absorb_shift=lambda shift: self._can_absorb(shift),
+            has_alternative_route=self._has_alternative_route(junction),
+            position_confident=self.position_confident,
+        )
+
+        if decision.outcome is Outcome.RESERVE:
+            # FR-5.5: broadcast the claim before entering. Sent every tick while the
+            # conflict stands, not once: RESERVE is one-shot on a lossy radio, and a
+            # peer that missed it would keep believing the junction contested and
+            # yield unnecessarily. Repetition is how every other guarantee here is
+            # made loss-tolerant.
+            result.outbox.append(
+                Reserve(
+                    junction_id=junction,
+                    window_start_ms=window.start_ms,
+                    window_end_ms=window.end_ms,
+                    priority=self.task_priority,
+                )
+            )
+            self.metrics.yields_won += 1
+
+        if decision.outcome.may_enter:
+            if self.state is State.YIELD:
+                self.machine.fire_if_possible(Event.CONFLICT_CLEARED, now_ms)
+                result.notes.append(f"conflict cleared at J{junction}; resuming")
+            return config.NOMINAL_SPEED_MM_S
+
+        # ---- yielding ------------------------------------------------------
+        if self.state is not State.YIELD:
+            if self.machine.fire_if_possible(Event.CONFLICT_LOST, now_ms):
+                self.metrics.yields_lost += 1
+                result.notes.append(str(decision))
+        self.yielding_until_ms = max(
+            self.yielding_until_ms, window.start_ms + decision.shift_ms
+        )
+
+        if decision.outcome is Outcome.YIELD_REPLAN:
+            # Appendix B's second AVOID branch: mark the edge temporarily costly and
+            # replan. The graph is not modified -- the aisle is passable, just
+            # contended -- so the cost penalty lives in the robot's own view.
+            if self.edge_id is not None:
+                self._avoid_edges.add(self.edge_id)
+            if self.machine.fire_if_possible(Event.EDGE_BLOCKED, now_ms):
+                result.notes.append(
+                    f"J{junction} contested and unabsorbable; rerouting"
+                )
+            return config.YIELD_SPEED_MM_S
+
+        if decision.outcome is Outcome.YIELD_SLOW:
+            # Shed speed while there is room, then hold at the line. Crawling all the
+            # way in would keep closing on the junction, and two robots converging on
+            # one node from different aisles touch before either has entered it.
+            if self._distance_to_next_node_mm() <= config.JUNCTION_CLEARANCE_MM:
+                return 0
+            return config.YIELD_SPEED_MM_S
+
+        # YIELD_HOLD or BLOCKED_LOW_CONFIDENCE: stop short of the junction. Not the
+        # emergency braking FR-5.6 forbids -- that rules out hard braking as the
+        # normal means of resolution, and this is reached only after anticipation has
+        # been tried and found insufficient.
+        return 0
+
+    def _distance_to_next_node_mm(self) -> int:
+        if self.edge_id is None:
+            return 0
+        return max(0, self.graph.length_mm(self.edge_id) - self.progress_mm)
+
+    def _can_absorb(self, shift_ms: int) -> bool:
+        """Whether shedding speed can delay arrival by ``shift_ms`` in time.
+
+        Slowing from nominal to the yield speed stretches the remaining approach by
+        the ratio between them. The comparison is against the time left *before the
+        junction*, which is FR-5.10's last passing point for an approach with no
+        alternative: once there, nothing can be absorbed any more.
+        """
+        if self.edge_id is None:
+            return False
+        remaining_ms = self._remaining_on_current_edge_ms()
+        if remaining_ms <= 0:
+            return False
+        # Integer arithmetic only (CON-6): at YIELD_SPEED the same distance takes
+        # remaining * NOMINAL / YIELD, so the delay available is the difference.
+        stretched_ms = remaining_ms * config.NOMINAL_SPEED_MM_S // config.YIELD_SPEED_MM_S
+        return (stretched_ms - remaining_ms) >= shift_ms
+
+    def _has_alternative_route(self, junction: int) -> bool:
+        """Whether a route to the objective exists that avoids ``junction``.
+
+        Cheap structural test rather than a replan: if the node the robot is standing
+        on has another way out, an alternative is plausible and the planner will
+        settle it. A full search here would run inside every tick of every approach
+        and blow the FR-3.5 budget for no gain.
+        """
+        if self.edge_id is None:
+            return False
+        ways_out = [
+            edge for _, edge in self.graph.neighbours(self.current_node)
+            if edge != self.edge_id
+        ]
+        return len(ways_out) > 0 and self.progress_mm == 0
 
     def _step_replan(self, now_ms: int, result: StepResult) -> None:
         task = self.task

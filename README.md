@@ -80,11 +80,54 @@ All found while implementing; all should be corrected in v1.1.
    one: a robot that must relinquish may be part-way through the job. The robot
    has not failed, the route is intact, and the task is not unreachable, so none
    of Appendix A's events describe it. Added as `TASK_WITHDRAWN`.
-5. **Three required message types are missing from the section 3.4 table**:
+5. **Appendix C's deadlock proof does not cover multiple resources.** The proof
+   concerns one conflict set under one total order and shows it has a unique
+   maximum, so exactly one AMR proceeds. A fleet contends for two kinds of
+   resource -- junctions and single-lane corridors -- and ranking them
+   independently readmits the cycle: r1 yielded a junction to r3 while r3 yielded
+   a corridor to r1, each correctly applying the total order to a different
+   resource, and neither moved. Resolved for a corridor and its endpoints by
+   merging them into one conflict set. **Still open for a ring of distinct
+   corridors** (`tests/coordination/test_safety_cases.py`, xfail): each robot is
+   the rightful winner of the segment it wants while blocked by another holding
+   the next. The fix is sequence-level reservation per [R8], not a local rule.
+6. **Nothing says where an AMR idles, and it matters.** Appendix A has IDLE
+   broadcasting INTENT and leaving only on winning an auction. An idle robot on a
+   junction is a permanent obstacle: peers stop at their following distance and
+   wait for a robot with no reason to move. Two separate deadlocks came from this.
+   Resolved with staging bays in every map -- one per robot, never a task endpoint
+   -- and an idle robot withdraws to one. Both conditions are necessary: too few
+   bays and the queue for a bay blocks the aisle; a bay on a pickup node and the
+   jam simply relocates.
+7. **No requirement covers following distance.** FE-5 resolves who crosses a
+   *node*; nothing addresses two robots travelling one aisle in the same
+   direction, where the one behind simply drives into the one in front. NFR-2.1
+   permits zero collisions, so it has to be handled. Implemented as a reactive
+   headway rule on the forward obstacle sensor IF-2.4 already requires, which also
+   works against a peer whose radio has failed.
+8. **RESERVE carries no direction, and INTENT's does not survive it.** Section
+   3.4.2 gives RESERVE no approach or exit field, so an explicit claim arriving
+   after an implied one discarded the geometry and made following traffic look
+   like a crossing conflict. A robot then outranked one it was queued behind and
+   could not pass. Resolved by carrying the known direction forward rather than by
+   widening the frame.
+9. **Three required message types are missing from the section 3.4 table**:
    COMPLETE (Appendix A has AT_DROP broadcast it), BLOCKAGE (FR-6.1) and BEACON
    (FR-7.4). All three are implemented.
 
 ## Status
 
-Phases 0-1 complete (skeleton, graph, zones, maps, visualiser). See the plan for
-the remaining build order.
+Phases 0-6 complete. `bench3` records **zero inter-robot collisions across 8
+seeds with every run finishing**, which is the Phase 6 gate and the AC-2 target.
+
+Not yet met, and known:
+
+- **AC-3 (>=20% makespan reduction) is not met and is not expected to be yet.**
+  Configuration B currently runs slightly *slower* than A, because yielding costs
+  time while the two things that pay it back are unbuilt: traffic learning to
+  spread routes off the choke corridor (Phase 8), and Configuration A's own
+  stop-and-wait halting penalty, which FR-10.5 requires and which is what the
+  baseline is supposed to be handicapped by (Phase 11).
+- **TC-3's ring case deadlocks** -- see SRS defect 5 above. Junction arbitration
+  and single-corridor arbitration are each correct and neither is sufficient.
+- **`visual30` has never run**: Webots is not installed.

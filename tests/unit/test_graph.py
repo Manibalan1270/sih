@@ -15,7 +15,7 @@ import pytest
 
 from core import config
 from core.graph import Edge, Graph, MapError, Node
-from tests.conftest import reference_shortest_cost, to_networkx
+from tests.conftest import MAPS_DIR, reference_shortest_cost, to_networkx
 
 
 def _tiny_graph() -> Graph:
@@ -186,8 +186,18 @@ class TestQueries:
 
     def test_chargers_and_junctions_are_reported(self, benchmark_map: Graph) -> None:
         assert set(benchmark_map.chargers) == {0, 7}
-        # The two depots are spurs, so they are not arbitration points.
-        assert set(benchmark_map.junctions) == set(benchmark_map.nodes) - {0, 7}
+        assert set(benchmark_map.parking_nodes) == {12, 13, 14}
+        # Depots and parking bays are spurs, so they are not arbitration points.
+        spurs = {0, 7, 12, 13, 14}
+        assert set(benchmark_map.junctions) == set(benchmark_map.nodes) - spurs
+
+    def test_parking_bays_are_not_task_endpoints(self, benchmark_map: Graph) -> None:
+        """Parking on a pickup node simply moves the jam somewhere else."""
+        import json
+
+        raw = json.loads((MAPS_DIR / "benchmark_map.json").read_text(encoding="utf-8"))
+        endpoints = set(raw["pickup_nodes"]) | set(raw["drop_nodes"])
+        assert not set(benchmark_map.parking_nodes) & endpoints
 
     def test_unknown_ids_raise_with_a_useful_message(self, benchmark_map: Graph) -> None:
         with pytest.raises(KeyError, match="benchmark_map"):

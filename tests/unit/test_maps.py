@@ -142,11 +142,21 @@ class TestLoopMapStructure:
             assert edge is not None, f"no edge {node}->{following}"
             assert loop_map.edge(edge).single_lane
 
-    def test_each_junction_has_a_spur_to_start_from(self, loop_map: Graph) -> None:
-        spurs = [n.id for n in loop_map.nodes.values() if not n.is_junction]
+    def test_each_junction_has_a_spur_and_a_bay(self, loop_map: Graph) -> None:
+        """Three task spurs to start from, and three staging bays to idle in.
+
+        The bays are separate from the spurs on purpose: a robot parked on a task
+        endpoint blocks the task, which is how the depot jam arose.
+        """
+        raw = _raw("loop_map")
+        spurs = set(raw["pickup_nodes"])
+        bays = set(loop_map.parking_nodes)
         assert len(spurs) == 3
-        for spur in spurs:
-            assert len(loop_map.neighbours(spur)) == 1
+        assert len(bays) == 3
+        assert not spurs & bays
+        for node in spurs | bays:
+            assert not loop_map.node(node).is_junction
+            assert len(loop_map.neighbours(node)) >= 1
 
     def test_cyclic_task_set_routes_through_the_triangle(self, loop_map: Graph) -> None:
         """Robots at S0/S1/S2 heading to S1/S2/S0 must contend for the ring."""
@@ -154,6 +164,43 @@ class TestLoopMapStructure:
         for index, start in enumerate(spurs):
             goal = spurs[(index + 1) % len(spurs)]
             assert reference_shortest_cost(loop_map, start, goal) is not None
+
+
+class TestStagingBays:
+    """Every map needs somewhere idle robots can stand without obstructing anyone.
+
+    Not an SRS requirement, and it should be. Appendix A never says where a robot
+    idles, and one left on a junction is a permanent obstacle: peers stop at their
+    following distance and wait for a robot that has no reason to move. Two distinct
+    deadlocks came from this before bays existed.
+    """
+
+    @pytest.mark.parametrize("name", ALL_MAP_NAMES)
+    def test_bays_are_never_task_endpoints(self, name: str) -> None:
+        """Parking on a pickup node relocates the jam rather than removing it."""
+        graph = Graph.load(MAPS_DIR / f"{name}.json")
+        raw = _raw(name)
+        endpoints = set(raw.get("pickup_nodes", ())) | set(raw.get("drop_nodes", ()))
+        assert not set(graph.parking_nodes) & endpoints
+
+    @pytest.mark.parametrize("name", ALL_MAP_NAMES)
+    def test_bays_are_not_junctions(self, name: str) -> None:
+        graph = Graph.load(MAPS_DIR / f"{name}.json")
+        assert graph.parking_nodes
+        for bay in graph.parking_nodes:
+            assert not graph.node(bay).is_junction
+
+    def test_every_scenario_has_a_bay_per_robot(self) -> None:
+        """A bay is a dead-end spur holding one robot, so too few means the queue for
+        a bay blocks the aisle instead -- which is the same failure in a new place."""
+        for scenario in scenarios.SCENARIOS.values():
+            if scenario.simulated_robots == 0:
+                continue
+            graph = Graph.load(scenario.map_path)
+            assert len(graph.parking_nodes) >= scenario.simulated_robots, (
+                f"{scenario.name}: {len(graph.parking_nodes)} bays for "
+                f"{scenario.simulated_robots} AMRs"
+            )
 
 
 class TestZonedMapStructure:
@@ -167,9 +214,11 @@ class TestZonedMapStructure:
 
     @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
     def test_grid_dimensions_match_the_node_count(self, name: str) -> None:
+        """The floor is the grid; bays hang off it and are counted separately."""
         raw = _raw(name)
         grid = raw["grid"]
-        assert len(raw["nodes"]) == grid["cols"] * grid["rows"]
+        bays = [n for n in raw["nodes"] if n.get("parking")]
+        assert len(raw["nodes"]) == grid["cols"] * grid["rows"] + len(bays)
 
     def test_scale_map_needs_16_bit_ids(self) -> None:
         """This is what forces scale100's edge_id_bits override."""

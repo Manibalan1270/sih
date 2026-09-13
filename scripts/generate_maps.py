@@ -60,6 +60,7 @@ def build_grid(
     col_bands: int,
     row_bands: int,
     single_lane_cols: tuple[int, ...] = (),
+    bays: int = 0,
 ) -> dict:
     """Build a warehouse grid map as a JSON-ready dict.
 
@@ -124,6 +125,47 @@ def build_grid(
     pickups = [n["id"] for n in nodes if n["id"] % cols < cols // 3]
     drops = [n["id"] for n in nodes if n["id"] % cols >= cols - cols // 3]
 
+    # ---- staging bays --------------------------------------------------------
+    # One per robot, and none of them a task endpoint.
+    #
+    # An idle AMR standing on a junction is a permanent obstacle: peers stop at their
+    # following distance and wait for a robot with no reason to move. So idle robots
+    # withdraw to a bay -- but that only helps if there are enough bays and none of
+    # them is somewhere a task sends a robot. With too few, the queue for a bay blocks
+    # the aisle instead; with a bay on a pickup node, the jam simply relocates. Both
+    # were observed before this existed.
+    #
+    # Bays hang off perimeter nodes and sit outside the floor, which is where a real
+    # warehouse puts its charging hall.
+    perimeter = [
+        node_id(col, row)
+        for row in range(rows)
+        for col in range(cols)
+        if col in (0, cols - 1) or row in (0, rows - 1)
+    ]
+    endpoints = set(pickups) | set(drops)
+    anchors = [n for n in perimeter if n not in endpoints] or perimeter
+    for index in range(bays):
+        anchor = anchors[index % len(anchors)]
+        anchor_node = nodes[anchor]
+        depth = 1 + index // len(anchors)
+        outward = -1 if anchor_node["x"] == 0 else 1
+        bay_id = len(nodes)
+        nodes.append(
+            {
+                "id": bay_id,
+                "name": f"BAY{index:03d}",
+                "x": anchor_node["x"] + outward * depth * (COL_SPACING_MM // 2),
+                "y": anchor_node["y"],
+                "junction": False,
+                "marker": True,
+                "parking": True,
+                "charger": index % 8 == 0,
+                "zone": anchor_node["zone"],
+            }
+        )
+        add_edge(anchor, bay_id)
+
     return {
         "name": name,
         "description": description,
@@ -151,6 +193,7 @@ WAREHOUSE_30 = dict(
     col_bands=3,
     row_bands=2,
     single_lane_cols=(4, 7),
+    bays=30,
 )
 
 WAREHOUSE_100 = dict(
@@ -168,6 +211,7 @@ WAREHOUSE_100 = dict(
     col_bands=6,
     row_bands=4,
     single_lane_cols=(5, 11, 17),
+    bays=100,
 )
 
 

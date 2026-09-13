@@ -266,6 +266,72 @@ by braking to a halt."""
 MIN_SPEED_MM_S = 80
 """Floor on commanded speed while still notionally moving."""
 
+AISLE_LANE_OFFSET_MM = 700
+"""Lateral offset of a travel lane from an aisle's centre line.
+
+ASM-5 labels every aisle single-lane or bidirectional, and that labelling only means
+something if a bidirectional aisle physically fits two AMRs abreast. Robots keep to
+their own side, so two travelling in opposite directions have centres 1400 mm apart
+-- well clear of the 500 mm collision distance -- while two travelling the same way
+share a lane and can still rear-end each other.
+
+Without this the collision detector treats every aisle as single-file and reports a
+collision every time two robots pass, which is not a coordination failure at all: it
+is the model being wrong. On the benchmark map that accounted for every remaining
+collision after junction arbitration was working."""
+
+JUNCTION_OCCUPANCY_MS = 700
+"""How long one AMR occupies a junction while crossing it.
+
+Roughly the time to clear its own footprint at cruise: 500 mm of diameter at
+800 mm/s is 625 ms, rounded up for the approach and exit. Fixed rather than
+computed per robot because ASM-6 makes the fleet homogeneous in speed and size;
+varying it would imply a heterogeneity the specification does not permit and OI-4
+records as out of scope."""
+
+ENTRY_COMMIT_MM = 150
+"""Distance into a single-lane corridor past which a robot is committed.
+
+Not zero, because arrival overshoot carries into the next edge: a robot that
+reaches a node mid-tick starts the following edge already a few millimetres along,
+so a test for "exactly at the entry" never fires. That defect presented as corridor
+arbitration being skipped entirely while appearing to be implemented."""
+
+FOLLOWING_DISTANCE_MM = 1200
+"""Headway a robot keeps from another ahead of it in the same lane.
+
+Nothing in FE-5 covers this: junction arbitration resolves who crosses *a node*
+first and says nothing about two robots travelling the same aisle in the same
+direction, where the one behind can simply drive into the one in front. But NFR-2.1
+permits zero inter-robot collisions, so something must handle it.
+
+IF-2.4 already requires the firmware to "detect a non-cooperative obstacle ahead
+within the stopping distance at maximum commanded speed", and a robot ahead in the
+same lane is exactly what that sensor sees. So headway is kept as a local reactive
+behaviour driven by a proximity reading, not as a coordination protocol -- which is
+also what makes it work against a peer whose radio has failed.
+
+2.4x the collision distance, so a robot brakes with room rather than to the
+millimetre."""
+
+JUNCTION_CLEARANCE_MM = 900
+"""How far short of a junction a yielding robot stops.
+
+FR-5.6 prefers shedding speed to braking, and this is the other half of doing that
+properly: shed speed early, then hold at the line if the conflict has not cleared.
+A robot that merely crawls keeps closing on the junction, and two robots converging
+on the same node from different aisles come within a footprint of each other before
+either has entered it -- which the collision detector correctly reports and which
+arbitrating *entry* alone does not prevent."""
+
+ARBITRATION_LOOKAHEAD_MS = 4000
+"""How far ahead of a junction a robot begins arbitrating.
+
+Must exceed the safety margin plus one INTENT period, or a robot could arrive at a
+junction before it had a chance to detect a conflict there. At 800 mm/s this is
+3.2 m of approach, which on the benchmark map is most of an aisle -- so a conflict
+is seen well before the last passing point FR-5.10 requires the decision at."""
+
 # ---------------------------------------------------------------------------
 # Baseline controller, Configuration A (FR-10.5)
 # ---------------------------------------------------------------------------

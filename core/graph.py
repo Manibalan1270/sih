@@ -52,6 +52,14 @@ class Node:
     """FR-6.7: a low-battery AMR routes here. Docking itself is out of scope
     for release 1.0 (OI-5)."""
 
+    is_parking: bool = False
+    """A staging bay: somewhere an idle AMR can stand without obstructing anyone.
+
+    Not in the SRS, and the omission has teeth. Appendix A never says where a robot
+    idles, and an idle robot on a junction is a permanent obstacle to every peer that
+    needs it. Parking bays are how real warehouses solve that, and they must be
+    distinct from task endpoints -- parking on a pickup node simply moves the jam."""
+
     zone_id: int = NO_ZONE
 
 
@@ -228,6 +236,17 @@ class Graph:
         return tuple(n.id for n in self.nodes.values() if n.is_charger)
 
     @property
+    def parking_nodes(self) -> tuple[int, ...]:
+        """Bays first, then chargers, then any node where nothing crosses."""
+        bays = tuple(n.id for n in self.nodes.values() if n.is_parking)
+        if bays:
+            return bays
+        chargers = self.chargers
+        if chargers:
+            return chargers
+        return tuple(n.id for n in self.nodes.values() if not n.is_junction)
+
+    @property
     def single_lane_edges(self) -> tuple[int, ...]:
         return tuple(e.id for e in self.edges.values() if e.single_lane)
 
@@ -361,6 +380,7 @@ class Graph:
                 is_junction=bool(raw.get("junction", True)),
                 has_marker=bool(raw.get("marker", raw.get("junction", True))),
                 is_charger=bool(raw.get("charger", False)),
+                is_parking=bool(raw.get("parking", False)),
                 zone_id=int(raw.get("zone", NO_ZONE)),
             )
             if node.id in nodes:

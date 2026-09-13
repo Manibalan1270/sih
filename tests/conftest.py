@@ -81,6 +81,18 @@ class ReferencePlanner:
         self._cost = cost or graph.nominal_cost_ms
         self.calls = 0
 
+    def travel_cost(self, start: int, goal: int) -> int:
+        """Least cost between two nodes, satisfying the RoutePlanner protocol."""
+        from core import config
+
+        found = self.route(start, goal)
+        if found is None:
+            return config.INFINITE_COST
+        return sum(
+            self._cost(self.graph.edge_between(found[i], found[i + 1]))
+            for i in range(len(found) - 1)
+        )
+
     def route(self, start: int, goal: int) -> list[int] | None:
         self.calls += 1
         if start == goal:

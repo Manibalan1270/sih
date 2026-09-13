@@ -24,7 +24,13 @@ from simulator.scenario import RoundRobinAllocator, build
 
 @pytest.fixture
 def sim():
-    return build(scenarios.get("bench3"), seed=42)
+    """Configuration A: round-robin, no mesh, no arbitration (FR-10.5).
+
+    Phase 4's subject. Pinned explicitly rather than left to the default, because the
+    default allocator is now the full auction and these tests are about what an
+    uncoordinated fleet does.
+    """
+    return build(scenarios.get("bench3"), seed=42, allocator=RoundRobinAllocator())
 
 
 class TestPhase4Gate:
@@ -100,11 +106,14 @@ class TestTheProblemExists:
         )
         assert on_corridor >= len(sim.engine.coordination_failures) // 2
 
-    def test_nobody_yields_yet(self, sim) -> None:
-        """There is no arbitration in Phase 4, so a yield would mean something is
-        happening that has not been written."""
+    def test_an_uncoordinated_fleet_never_yields(self, sim) -> None:
+        """Configuration A exchanges no intent (FR-10.5), so it cannot yield: it has
+        no arbiter and no mesh. A yield here would mean the control condition is
+        quietly doing some of the coordination it exists to be measured against."""
         sim.run(max_ms=1_800_000)
         assert sum(r.metrics.yields_lost for r in sim.engine.robots) == 0
+        assert all(r.arbiter is None for r in sim.engine.robots)
+        assert sim.mesh is None
 
 
 class TestDeterminism:

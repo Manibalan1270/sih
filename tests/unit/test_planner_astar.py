@@ -167,7 +167,10 @@ class TestHeuristic:
         enormous number of equally-optimal routes.
         """
         graph = Graph.load("maps/warehouse_zoned_100.json")
-        goal = max(graph.nodes)
+        # The far corner of the *floor*, not max(nodes): staging bays are appended
+        # after the grid, and a bay is a spur rather than a corner.
+        cols, rows = 24, 12
+        goal = (rows - 1) * cols + (cols - 1)
         astar = AStarPlanner(graph)
         route = astar.route(0, goal)
         assert graph.straight_line_ms(0, goal) == astar.route_cost(route), (

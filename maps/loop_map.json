@@ -1,22 +1,144 @@
 {
-  "name": "loop_map",
-  "description": "Cyclic-conflict map for TC-3 and the Appendix C proof. A triangle of three single-lane junction-to-junction edges, each junction carrying one spur. Placing robots on S0/S1/S2 with goals S1/S2/S0 creates a three-way cyclic wait: each robot needs the segment the next one is about to occupy. The total order on (priority, robot_id) must yield exactly one robot proceeding, with no cycle able to form.",
-  "nodes": [
-    {"id": 0, "name": "J0", "x": 10000, "y": 10000, "zone": 0},
-    {"id": 1, "name": "J1", "x": 16000, "y": 10000, "zone": 0},
-    {"id": 2, "name": "J2", "x": 13000, "y": 15000, "zone": 0},
-    {"id": 3, "name": "S0", "x": 4000,  "y": 10000, "junction": false, "marker": true, "zone": 0},
-    {"id": 4, "name": "S1", "x": 22000, "y": 10000, "junction": false, "marker": true, "zone": 0},
-    {"id": 5, "name": "S2", "x": 13000, "y": 21000, "junction": false, "marker": true, "zone": 0}
-  ],
-  "edges": [
-    {"id": 0, "u": 0, "v": 1, "single_lane": true},
-    {"id": 1, "u": 1, "v": 2, "single_lane": true},
-    {"id": 2, "u": 2, "v": 0, "single_lane": true},
-    {"id": 3, "u": 3, "v": 0},
-    {"id": 4, "u": 4, "v": 1},
-    {"id": 5, "u": 5, "v": 2}
-  ],
-  "pickup_nodes": [3, 4, 5],
-  "drop_nodes": [3, 4, 5]
+ "name": "loop_map",
+ "description": "Cyclic-conflict map for TC-3 and the Appendix C proof. A triangle of three single-lane junction-to-junction edges, each junction carrying one spur. Placing robots on S0/S1/S2 with goals S1/S2/S0 creates a three-way cyclic wait: each robot needs the segment the next one is about to occupy. The total order on (priority, robot_id) must yield exactly one robot proceeding, with no cycle able to form. Three parking bays (B0/B1/B2) hang off the spurs and are not task endpoints. An idle AMR must have somewhere to stand that nobody needs: parking on a pickup node simply relocates the jam, and a dead-end spur holds one robot.",
+ "nodes": [
+  {
+   "id": 0,
+   "name": "J0",
+   "x": 10000,
+   "y": 10000,
+   "zone": 0
+  },
+  {
+   "id": 1,
+   "name": "J1",
+   "x": 16000,
+   "y": 10000,
+   "zone": 0
+  },
+  {
+   "id": 2,
+   "name": "J2",
+   "x": 13000,
+   "y": 15000,
+   "zone": 0
+  },
+  {
+   "id": 3,
+   "name": "S0",
+   "x": 4000,
+   "y": 10000,
+   "junction": false,
+   "marker": true,
+   "zone": 0
+  },
+  {
+   "id": 4,
+   "name": "S1",
+   "x": 22000,
+   "y": 10000,
+   "junction": false,
+   "marker": true,
+   "zone": 0
+  },
+  {
+   "id": 5,
+   "name": "S2",
+   "x": 13000,
+   "y": 21000,
+   "junction": false,
+   "marker": true,
+   "zone": 0
+  },
+  {
+   "id": 6,
+   "name": "B0",
+   "x": -2000,
+   "y": 10000,
+   "junction": false,
+   "marker": true,
+   "parking": true,
+   "zone": 0
+  },
+  {
+   "id": 7,
+   "name": "B1",
+   "x": 28000,
+   "y": 10000,
+   "junction": false,
+   "marker": true,
+   "parking": true,
+   "zone": 0
+  },
+  {
+   "id": 8,
+   "name": "B2",
+   "x": 13000,
+   "y": 27000,
+   "junction": false,
+   "marker": true,
+   "parking": true,
+   "zone": 0
+  }
+ ],
+ "edges": [
+  {
+   "id": 0,
+   "u": 0,
+   "v": 1,
+   "single_lane": true
+  },
+  {
+   "id": 1,
+   "u": 1,
+   "v": 2,
+   "single_lane": true
+  },
+  {
+   "id": 2,
+   "u": 2,
+   "v": 0,
+   "single_lane": true
+  },
+  {
+   "id": 3,
+   "u": 3,
+   "v": 0
+  },
+  {
+   "id": 4,
+   "u": 4,
+   "v": 1
+  },
+  {
+   "id": 5,
+   "u": 5,
+   "v": 2
+  },
+  {
+   "id": 6,
+   "u": 3,
+   "v": 6
+  },
+  {
+   "id": 7,
+   "u": 4,
+   "v": 7
+  },
+  {
+   "id": 8,
+   "u": 5,
+   "v": 8
+  }
+ ],
+ "pickup_nodes": [
+  3,
+  4,
+  5
+ ],
+ "drop_nodes": [
+  3,
+  4,
+  5
+ ]
 }

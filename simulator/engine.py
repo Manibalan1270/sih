@@ -157,6 +157,10 @@ class Engine:
         if self.mesh is not None:
             self.mesh.deliver()
 
+        # Sensor readings first, from the world as it stands at the start of the
+        # tick. A robot cannot see where a peer will be after this tick's motion.
+        self._update_forward_clearance()
+
         commands = []
         for robot in self.active_robots:
             before = robot.state
@@ -195,6 +199,63 @@ class Engine:
         self.tick += 1
         return collisions
 
+    def _update_forward_clearance(self) -> None:
+        """Feed every robot its forward proximity reading (IF-2.4).
+
+        Modelled rather than messaged. The guide's upward flow has the simulator
+        report "collision proximity sensor value" and our code interpret it, and
+        keeping headway on a sensor rather than on INTENT means it still works
+        against a peer whose radio has failed -- which is the case that matters.
+
+        Two things count as ahead: a robot further along the same edge in the same
+        direction, and a robot sitting at the node this robot is heading for.
+        Opposing traffic on a bidirectional aisle is in the other lane and is not an
+        obstacle; on a single-lane corridor it is, and corridor arbitration is what
+        stops them meeting there.
+        """
+        occupants: dict[tuple[int, int], list[Robot]] = {}
+        at_node: dict[int, list[Robot]] = {}
+        for robot in self.active_robots:
+            if robot.edge_id is not None and robot.next_node is not None:
+                occupants.setdefault((robot.edge_id, robot.next_node), []).append(robot)
+            # A robot barely onto an edge is still standing on the node behind it, so
+            # it must be visible to anything approaching that node. Without this a
+            # robot stopped at the head of an edge is invisible until the approaching
+            # robot has joined the same edge -- by which point they are coincident,
+            # each reads zero clearance, and both hold for the other forever.
+            if robot.edge_id is None or robot.progress_mm <= config.ENTRY_COMMIT_MM:
+                at_node.setdefault(robot.current_node, []).append(robot)
+
+        for robot in self.active_robots:
+            robot.forward_clearance_mm = 1 << 30
+            if robot.edge_id is None or robot.next_node is None:
+                continue
+            nearest = 1 << 30
+
+            same_lane = occupants.get((robot.edge_id, robot.next_node), ())
+            for other in same_lane:
+                if other.robot_id == robot.robot_id:
+                    continue
+                gap = other.progress_mm - robot.progress_mm
+                if gap == 0:
+                    # Coincident. There is no "behind", so the symmetric rule would
+                    # have both hold for each other. Break it with the same total
+                    # order the rest of the system uses: the lower id goes first.
+                    if robot.robot_id < other.robot_id:
+                        continue
+                    nearest = 0
+                elif 0 < gap < nearest:
+                    nearest = gap
+
+            to_node = robot.graph.length_mm(robot.edge_id) - robot.progress_mm
+            for other in at_node.get(robot.next_node, ()):
+                if other.robot_id == robot.robot_id:
+                    continue
+                if to_node < nearest:
+                    nearest = to_node
+
+            robot.forward_clearance_mm = nearest
+
     def _apply_motion(self, robot: Robot, result) -> None:
         command = result.command
         if command.is_hold:
@@ -216,7 +277,9 @@ class Engine:
         """Physical positions of every robot present in the world."""
         result = []
         for robot in self.active_robots:
-            x, y = robot.position_mm()
+            # Lane-adjusted, because two robots passing on a bidirectional aisle are
+            # not in contact -- see Robot.footprint_mm.
+            x, y = robot.footprint_mm()
             result.append(
                 Pose(
                     robot_id=robot.robot_id,

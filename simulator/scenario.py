@@ -24,6 +24,7 @@ from typing import Protocol
 
 from communication.messages import Announce, MessageType
 from core import config
+from core.arbitration import Arbiter
 from core.auction import Auctioneer
 from core.graph import Graph
 from core.planner_astar import AStarPlanner
@@ -389,6 +390,7 @@ def build(
                 # baseline to exchange no intent, and withholding the collaborator
                 # makes that structural rather than a matter of remembering not to.
                 auctioneer=Auctioneer(robot_id=robot_id) if coordinated else None,
+                arbiter=Arbiter(robot_id=robot_id) if coordinated else None,
                 zone_eligible=(
                     (lambda task_zone, mine=robot_zone: zones.eligible_to_bid(mine, task_zone))
                     if coordinated
