@@ -183,6 +183,32 @@ corner another robot is leaving. The first two are fixed; the last is seed 19.
 Both densities tried at 3 AMRs -- 12 tasks over 4 waves and 24 in a single wave --
 behave the same way. TC-3's single-lane ring clears.
 
+### Above 3 AMRs it does not hold, and the gap is wide
+
+Measured on this commit, not projected:
+
+| fleet | map | result |
+|---|---|---|
+| 3 | benchmark_map | 1 failure in 20 seeds |
+| 6 | benchmark_map | 5 of 5 seeds stall; 3 collisions on one |
+| 10 | benchmark_map | 5 of 5 stall; collisions on two |
+| 30 (`visual30`) | warehouse_zoned_30 | 24 of 120 tasks, **12 collisions** |
+| 100 (`scale100`) | warehouse_zoned_100 | 7 of 400 tasks in 157 s, **30 collisions** |
+
+6 and 10 on `benchmark_map` are not a fair test -- 15 nodes and one choke corridor is
+extreme density at that fleet size -- but `visual30` and `scale100` run on maps built
+for their fleet sizes and fail anyway.
+
+This does **not** contradict the zoning result. The 16.4 auction frames per task
+measured at 100 AMRs against NFR-1.12's budget of 40 is a statement about
+*communication* -- that bidding stays inside a zone rather than crossing the fleet --
+and it still holds. Coordination collapsing at the same fleet size is a separate
+property, and the earlier reading of "scale100 runs" conflated the two. What runs is
+the auction; what fails is the traffic.
+
+So AC-5 is met at 3 AMRs only, and AC-6's `visual30` is not close to demonstrable
+regardless of whether Webots is installed.
+
 Three defects behind earlier failures, all of which presented as coordination
 deadlocks and none of which were:
 
