@@ -316,6 +316,23 @@ reaches a node mid-tick starts the following edge already a few millimetres alon
 so a test for "exactly at the entry" never fires. That defect presented as corridor
 arbitration being skipped entirely while appearing to be implemented."""
 
+FOLLOW_GAP_MS = 1600
+"""Time gap a robot keeps behind a peer it is following along an edge.
+
+Separation in *time*, not distance, and that is the point: it is the same temporal
+reasoning junction arbitration already uses (FR-5.3's margin), and it lets a robot
+hold station by *shedding speed* rather than by halting -- which is what FR-5.6 and
+NFR-2.4 actually prescribe.
+
+Sized at twice FR-5.3's 800 ms margin, so a follower stays outside the window the
+leader would claim at the junction ahead and the two never contend for it.
+
+The reactive distance rule below remains as a safety net for things that do not
+broadcast (IF-2.4, FR-6.6). The difference matters: reactive proximity halting is
+*literally* how §1.5 defines stop-and-wait, so using it against a cooperating peer
+puts the behaviour this project exists to replace inside Configuration B. Measured
+before this existed: 44% of all hold-time."""
+
 FOLLOWING_DISTANCE_MM = 1200
 """Headway a robot keeps from another ahead of it in the same lane.
 
@@ -371,6 +388,22 @@ not chatter on the radius boundary."""
 
 OBSTACLE_WAIT_MS = 3000
 """FR-6.6: dwell before repairing a route around a non-cooperative obstacle."""
+
+CONTENDED_EDGE_PENALTY_MS = 20_000
+"""Cost a robot adds, in its own view only, to an edge it is routing around because a
+peer is parked on it (Appendix B's AVOID, second branch).
+
+Comparable to a long detour on the benchmark map, so an alternative wins where one
+exists and the edge is still chosen when it is the only way. Never applied to the
+graph: the aisle is passable, merely occupied, and marking the graph would make one
+robot's problem the whole fleet's."""
+
+CONTENDED_EDGE_TTL_MS = 10_000
+"""How long such a penalty lasts.
+
+Expiry is what keeps the avoid-set from becoming permanent route damage: a peer that
+has since moved on should stop costing the fleet an aisle. It also makes the mechanism
+self-healing if a robot's belief about the blockage was wrong."""
 
 BLOCKED_EDGE_PENALTY_MS = 1_000_000
 """Cost applied to an edge known to be impassable. Large but finite, so an

@@ -277,16 +277,30 @@ class Robot:
     """Periods to repeat COMPLETE. Four covers 800 ms, which at 30% independent loss
     leaves under a 1% chance of a peer missing every copy."""
 
+    _now_ms: int = 0
+    """Latest tick time, so ``edge_cost`` can honour penalty expiry. The planner's
+    cost function takes only an edge id, and core/ may not read a wall clock."""
+
+    _last_speed_mm_s: int = 0
+    """Speed commanded on the previous tick, so INTENT can declare an honest ETA."""
+
     _charge_accumulator_ms: int = 0
     """Sub-percent charging time carried between ticks, mirroring the drain side."""
 
-    _avoid_edges: set[int] = field(default_factory=set)
-    """Edges this robot is temporarily avoiding after losing a junction contest
-    (Appendix B's AVOID, second branch).
+    _avoid_edges: dict[int, int] = field(default_factory=dict)
+    """edge_id -> aligned time the penalty expires.
 
-    Local to the robot, and deliberately not a graph blockage: the aisle is
-    perfectly passable, it is merely contended, and marking the graph would make one
-    robot's yield everyone's problem. Cleared once the yield resolves."""
+    Edges this robot is routing around because a peer is parked on them (Appendix B's
+    AVOID, second branch). Local to the robot and deliberately not a graph blockage:
+    the aisle is passable, merely occupied, and marking the graph would make one
+    robot's problem the whole fleet's.
+
+    Read by ``edge_cost``, which is the planner's cost function. That wiring is the
+    whole mechanism -- without it the penalty is recorded and ignored, the replan
+    returns the same route, and the reroute re-triggers every tick. Measured before it
+    was connected: 113,612 replans in a single 12-task run."""
+
+    _last_reroute_ms: int = -10_000
 
     _last_intent_ms: int = -10_000
     """When INTENT was last broadcast. Negative so the first tick emits one."""
@@ -412,6 +426,7 @@ class Robot:
         """
         result = StepResult(command=MotionCommand.hold())
         self.wait_cause = None
+        self._now_ms = now_ms
 
         # FR-5.11: claims lapse on their own, with no release message. Done before
         # anything reads the table, so a decision is never taken against a window
@@ -525,7 +540,18 @@ class Robot:
 
         horizon = self.remaining_route[1 : 1 + config.INTENT_HORIZON]
         etas: list[int] = []
+        # First leg at the speed actually commanded, not the nominal one.
+        #
+        # FR-1.2 makes eta_ms a declaration of *arrival*, and a robot holding position
+        # that advertises a nominal ETA is telling its peers it will clear the node
+        # shortly when it will not. They keep approaching on that promise and then have
+        # to brake reactively -- which is precisely the stop-and-wait behaviour being
+        # removed. Floored at the yield speed so a halted robot declares a late arrival
+        # rather than an infinite one, which would overflow the uint16 field.
         running = self._remaining_on_current_edge_ms()
+        if self._last_speed_mm_s < config.NOMINAL_SPEED_MM_S:
+            honest = max(config.YIELD_SPEED_MM_S, self._last_speed_mm_s)
+            running = running * config.NOMINAL_SPEED_MM_S // honest
         previous = self.next_node if self.next_node is not None else self.current_node
         for node in horizon:
             if node != previous:
@@ -578,6 +604,8 @@ class Robot:
             state=payload.state,
             battery_pct=payload.battery_pct,
             held_task_id=payload.held_task_id,
+            next_nodes=payload.next_nodes,
+            eta_ms=tuple(sent_at_ms + eta for eta in payload.eta_ms),
         )
         if self.arbiter is not None:
             self.reservations.record_intent(
@@ -1035,8 +1063,153 @@ class Robot:
         elif self.state is State.YIELD:
             speed = config.YIELD_SPEED_MM_S
 
+        speed = self._follow_traffic_ahead(now_ms, speed, result)
         speed = self._limit_for_clearance(speed, result)
+        self._last_speed_mm_s = speed
         result.command = MotionCommand(speed_mm_s=speed, target_node=self.next_node)
+
+    def _follow_traffic_ahead(self, now_ms: int, speed: int, result: StepResult) -> int:
+        """Keep station behind a peer on the same edge by shedding speed (FR-5.6).
+
+        Anticipatory, from a peer's own INTENT: ``next_nodes`` and ``eta_ms`` say where
+        it is going and when it expects to arrive, so a follower can tell it is closing
+        on the robot in front *before* either is near enough for a sensor to matter,
+        and open the gap by slowing instead of braking.
+
+        Separation is measured in time, not distance, which is the same reasoning
+        junction arbitration already uses. A robot whose arrival at the shared node is
+        within FOLLOW_GAP_MS of the leader's sheds speed; one comfortably behind runs at
+        cruise.
+
+        Why not simply keep the proximity rule: §1.5 *defines* stop-and-wait as halting
+        when a peer comes within a fixed radius, and FR-5.6/NFR-2.4 reserve braking for
+        non-cooperative obstacles. A fleet peer broadcasts five times a second, so it is
+        not one -- and treating it as one put the very behaviour this system exists to
+        replace inside Configuration B, accounting for 44% of its hold-time. It also
+        made the wait un-negotiable, which is what let a deadlock cycle close through
+        it.
+        """
+        if self.edge_id is None or self.next_node is None or speed <= 0:
+            return speed
+
+        my_arrival = now_ms + self._remaining_on_current_edge_ms()
+        tightest: int | None = None
+        leader = -1
+        for peer in self.peers.live(now_ms):
+            if not peer.is_on_edge(self.current_node, self.next_node):
+                continue
+            their_arrival = peer.arrival_at(self.next_node)
+            if their_arrival is None:
+                continue
+            gap = my_arrival - their_arrival
+            if gap <= 0:
+                continue  # they are behind us, or level: not traffic to follow
+            if tightest is None or gap < tightest:
+                tightest, leader = gap, peer.robot_id
+
+        # A peer standing *on* the node ahead is the other way traffic blocks a path,
+        # and the sensor was catching it reactively. It is visible in INTENT too:
+        # current_node says where a peer is, and its declared ETA says whether it is
+        # going anywhere soon.
+        #
+        # Slowing down does not help here -- a crawl still closes on something that is
+        # not moving, so the reflex fires anyway, just later. What anticipation actually
+        # buys is the *choice* a sensor can never offer: FR-5.6's second remedy, take
+        # another edge. That is also what breaks a wait-for cycle, because a robot that
+        # reroutes stops being a link in it.
+        # NOTE: rerouting around a stationary blocker is implemented below
+        # (_reroute_around_blockage) and is NOT called from here. Enabling it removed
+        # every wait-for cycle at 6 AMRs but regressed the 3-AMR case from 0 to 1
+        # unfinished run in 3, and left 22,000 replans behind: robots flap between an
+        # occupied aisle and a detour as the penalty expires and the peer is still
+        # there. It needs hysteresis on the *decision*, not just a rate limit, and
+        # probably D* Lite so repair is cheap enough to do well. Left in place,
+        # deliberately unreached, rather than deleted.
+        blocker = self._stationary_blocker_ahead(now_ms, my_arrival)
+        if blocker >= 0 and tightest is None:
+            tightest, leader = 0, blocker
+
+        if tightest is None or tightest >= config.FOLLOW_GAP_MS:
+            return speed
+
+        # Closing too fast. Shed speed to stretch the remaining approach and open the
+        # gap. Not a halt: FR-5.6 wants the ETA shifted, and a crawling robot still
+        # clears the node behind it -- which is what stops a waiting robot becoming an
+        # obstacle to someone else.
+        result.notes.append(
+            f"following r{leader} by {tightest} ms on e{self.edge_id}; shedding speed"
+        )
+        return config.YIELD_SPEED_MM_S
+
+    def _stationary_blocker_ahead(self, now_ms: int, my_arrival: int) -> int:
+        """A peer sitting on the node we are heading for that will not clear in time.
+
+        Returns its id, or -1. "In time" means its own declared arrival at its next
+        node, plus a following gap, lands before we get there -- if it does, it is
+        traffic that will have moved on and no action is needed.
+        """
+        for peer in self.peers.live(now_ms):
+            if peer.current_node != self.next_node:
+                continue
+            if not peer.next_nodes:
+                return peer.robot_id  # declared nowhere to go: parked
+            clears_at = peer.arrival_at(peer.heading_to)
+            if clears_at is None or clears_at + config.FOLLOW_GAP_MS > my_arrival:
+                return peer.robot_id
+        return -1
+
+    def edge_cost(self, edge_id: int) -> int:
+        """The cost this robot plans on: nominal, plus its own temporary penalties.
+
+        Injected into the planner (FR-3.4), so the planner never has to know why an
+        edge is expensive. Phase 8's learned traffic model composes into the same
+        place, which is why the planner takes a cost function rather than a graph.
+        """
+        cost = self.graph.nominal_cost_ms(edge_id)
+        expires = self._avoid_edges.get(edge_id)
+        if expires is not None and expires > self._now_ms:
+            cost += config.CONTENDED_EDGE_PENALTY_MS
+        return cost
+
+    def _reroute_around_blockage(
+        self, now_ms: int, result: StepResult, blocker: int
+    ) -> bool:
+        """Take another edge rather than queue behind a stationary peer (FR-5.6).
+
+        The edge is penalised in this robot's own view only -- ``_avoid_edges`` -- never
+        in the graph. The aisle is perfectly passable; it is occupied, and marking the
+        graph would make one robot's problem the whole fleet's.
+
+        Returns whether a reroute was started. False means there is no alternative and
+        the caller should fall back to waiting.
+        """
+        if self.edge_id is None or not self.machine.holds_task:
+            return False
+        # Rate-limited to one attempt per INTENT period. Without it a robot retries
+        # every 20 ms tick while the blocker sits there, which is the flap that
+        # produced six figures of replans.
+        if now_ms - self._last_reroute_ms < config.INTENT_PERIOD_MS:
+            return False
+        ways_out = [
+            edge
+            for _, edge in self.graph.neighbours(self.current_node)
+            if edge != self.edge_id and self._avoid_edges.get(edge, 0) <= now_ms
+        ]
+        if not ways_out:
+            return False
+        if self.progress_mm > config.ENTRY_COMMIT_MM:
+            return False  # committed to this edge; cannot turn round mid-aisle
+
+        self._last_reroute_ms = now_ms
+        self._avoid_edges[self.edge_id] = now_ms + config.CONTENDED_EDGE_TTL_MS
+        if not self.machine.fire_if_possible(Event.EDGE_BLOCKED, now_ms):
+            self._avoid_edges.pop(self.edge_id, None)
+            return False
+        result.notes.append(
+            f"r{blocker} is parked on node {self.next_node}; taking another edge "
+            f"instead of queueing (FR-5.6)"
+        )
+        return True
 
     def _limit_for_clearance(self, speed: int, result: StepResult) -> int:
         """Cap speed for what the forward sensor sees (IF-2.4, FR-6.6).
@@ -1277,7 +1450,7 @@ class Robot:
             # replan. The graph is not modified -- the aisle is passable, just
             # contended -- so the cost penalty lives in the robot's own view.
             if self.edge_id is not None:
-                self._avoid_edges.add(self.edge_id)
+                self._avoid_edges[self.edge_id] = now_ms + config.CONTENDED_EDGE_TTL_MS
             if self.machine.fire_if_possible(Event.EDGE_BLOCKED, now_ms):
                 result.notes.append(
                     f"J{junction} contested and unabsorbable; rerouting"

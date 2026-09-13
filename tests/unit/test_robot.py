@@ -466,3 +466,163 @@ class TestCharging:
             f"a full charge covers {full_charge_mm / 1000:.0f} m; a benchmark run is "
             f"~300 m per robot, so charging would dominate rather than be an exception"
         )
+
+
+class TestAnticipatoryFollowing:
+    """FR-5.6 / NFR-2.4: keep station by shedding speed, not by braking on a sensor.
+
+    Section 1.5 *defines* stop-and-wait as halting when a peer comes within a fixed
+    radius, and FR-5.6/NFR-2.4 reserve braking for non-cooperative obstacles. A fleet
+    peer broadcasts INTENT five times a second, so it is not one. Treating it as one put
+    the behaviour this project exists to replace inside Configuration B -- 44% of all
+    hold-time, measured -- and made the wait un-negotiable, which let a deadlock cycle
+    close through it.
+    """
+
+    def _approaching(self, graph: Graph, robot_id: int = 1) -> Robot:
+        from core.auction import Auctioneer
+
+        robot = make_robot(graph, robot_id=robot_id, home=2)
+        robot.auctioneer = Auctioneer(robot_id=robot_id)
+        robot.accept_task(make_task(pickup=4, drop=5), 0)
+        robot.step(0)          # PLANNING -> route adopted
+        robot.step(20)         # MOVING
+        return robot
+
+    def test_a_leader_ahead_makes_the_follower_shed_speed(self, benchmark_map: Graph) -> None:
+        robot = self._approaching(benchmark_map)
+        assert robot.next_node is not None
+        # A peer on the same edge, same direction, arriving just ahead of us -- inside
+        # the following gap, which is what closing too fast looks like.
+        my_arrival = 40 + robot._remaining_on_current_edge_ms()
+        robot.peers.observe(
+            robot_id=2, now_ms=40, current_node=robot.current_node, priority=10,
+            state=3, battery_pct=100, held_task_id=-1,
+            next_nodes=(robot.next_node,), eta_ms=(my_arrival - 500,),
+        )
+        result = robot.step(40)
+        assert result.command.speed_mm_s == config.YIELD_SPEED_MM_S
+        assert any("following r2" in note for note in result.notes)
+
+    def test_a_peer_comfortably_ahead_is_not_followed(self, benchmark_map: Graph) -> None:
+        """Only closing traffic matters. Slowing for a robot far in front would make
+        the fleet crawl for no safety gain."""
+        robot = self._approaching(benchmark_map)
+        robot.peers.observe(
+            robot_id=2, now_ms=40, current_node=robot.current_node, priority=10,
+            state=3, battery_pct=100, held_task_id=-1,
+            next_nodes=(robot.next_node,),
+            eta_ms=(40 + robot._remaining_on_current_edge_ms() - config.FOLLOW_GAP_MS * 3,),
+        )
+        assert robot.step(40).command.speed_mm_s == config.NOMINAL_SPEED_MM_S
+
+    def test_a_peer_behind_is_not_followed(self, benchmark_map: Graph) -> None:
+        """A follower is not an obstacle. Yielding to one would invert the queue."""
+        robot = self._approaching(benchmark_map)
+        robot.peers.observe(
+            robot_id=2, now_ms=40, current_node=robot.current_node, priority=10,
+            state=3, battery_pct=100, held_task_id=-1,
+            next_nodes=(robot.next_node,),
+            eta_ms=(40 + robot._remaining_on_current_edge_ms() + 5_000,),
+        )
+        assert robot.step(40).command.speed_mm_s == config.NOMINAL_SPEED_MM_S
+
+    def test_opposing_traffic_on_a_bidirectional_aisle_is_not_followed(
+        self, benchmark_map: Graph
+    ) -> None:
+        """ASM-5: robots keep to their own lane, so oncoming traffic is not in the way."""
+        robot = self._approaching(benchmark_map)
+        robot.peers.observe(
+            robot_id=2, now_ms=40, current_node=robot.next_node, priority=10,
+            state=3, battery_pct=100, held_task_id=-1,
+            next_nodes=(robot.current_node,), eta_ms=(40,),
+        )
+        # Heading the other way, so not a leader. It does occupy the node ahead, which
+        # is a separate concern; what matters here is that it is not treated as traffic
+        # to queue behind on this edge.
+        assert robot.step(40).command.speed_mm_s in (
+            config.NOMINAL_SPEED_MM_S, config.YIELD_SPEED_MM_S, 0
+        )
+
+    def test_the_gap_is_temporal_not_geometric(self) -> None:
+        """The same reasoning junction arbitration uses. Sized above FR-5.3's margin so
+        a follower stays outside the window its leader would claim at the next junction
+        and the two never contend for it."""
+        assert config.FOLLOW_GAP_MS > config.MARGIN_MS
+
+
+class TestHonestETAs:
+    """FR-1.2: eta_ms is a declaration of arrival, so it must reflect reality."""
+
+    def test_a_slowed_robot_declares_a_later_arrival(self, benchmark_map: Graph) -> None:
+        """A robot holding position that advertises a nominal ETA tells its peers it
+        will clear the node shortly when it will not. They approach on that promise and
+        then have to brake reactively -- which is the behaviour being removed."""
+        from communication.messages import Intent
+
+        from core.auction import Auctioneer
+
+        def first_eta(commanded: int) -> int:
+            robot = make_robot(benchmark_map, home=2)
+            robot.auctioneer = Auctioneer(robot_id=1)
+            robot.accept_task(make_task(pickup=4, drop=5), 0)
+            robot.step(0)
+            robot.step(20)
+            robot._last_speed_mm_s = commanded
+            robot._last_intent_ms = -10_000
+            result = robot.step(40)
+            intents = [p for p in result.outbox if isinstance(p, Intent)]
+            assert intents, "no INTENT was emitted"
+            return intents[0].eta_ms[0]
+
+        assert first_eta(config.YIELD_SPEED_MM_S) > first_eta(config.NOMINAL_SPEED_MM_S)
+
+    def test_a_halted_robot_declares_a_finite_arrival(self, benchmark_map: Graph) -> None:
+        """Floored at the yield speed: the field is a uint16, so an infinite ETA would
+        overflow and wrap to something misleadingly soon."""
+        from communication.messages import Codec, Intent
+
+        from core.auction import Auctioneer
+
+        robot = make_robot(benchmark_map, home=2)
+        robot.auctioneer = Auctioneer(robot_id=1)
+        robot.accept_task(make_task(pickup=4, drop=5), 0)
+        robot.step(0)
+        robot.step(20)
+        robot._last_speed_mm_s = 0
+        robot._last_intent_ms = -10_000
+        intents = [p for p in robot.step(40).outbox if isinstance(p, Intent)]
+        assert intents
+        # Must survive the wire, which is where an unbounded value would betray itself.
+        codec = Codec(8)
+        assert codec.decode(codec.encode(1, 1, 40, intents[0])) is not None
+
+
+class TestContendedEdgePenalty:
+    """Appendix B's AVOID, second branch: mark the edge costly and replan."""
+
+    def test_the_penalty_reaches_the_planner(self, benchmark_map: Graph) -> None:
+        """Recorded and ignored is worse than absent: the replan returns the same route
+        and the reroute re-triggers every tick. Measured before this was connected:
+        113,612 replans in a single 12-task run."""
+        robot = make_robot(benchmark_map, home=2)
+        nominal = robot.edge_cost(4)
+        robot._now_ms = 0
+        robot._avoid_edges[4] = 5_000
+        assert robot.edge_cost(4) == nominal + config.CONTENDED_EDGE_PENALTY_MS
+
+    def test_the_penalty_expires(self, benchmark_map: Graph) -> None:
+        """Otherwise a peer that has long moved on keeps costing the fleet an aisle."""
+        robot = make_robot(benchmark_map, home=2)
+        robot._avoid_edges[4] = 5_000
+        robot._now_ms = 5_001
+        assert robot.edge_cost(4) == robot.graph.nominal_cost_ms(4)
+
+    def test_the_graph_itself_is_never_penalised(self, benchmark_map: Graph) -> None:
+        """The aisle is passable, merely occupied. Marking the graph would make one
+        robot's problem the whole fleet's."""
+        robot = make_robot(benchmark_map, home=2)
+        robot._now_ms = 0
+        robot._avoid_edges[4] = 5_000
+        assert benchmark_map.nominal_cost_ms(4) == robot.graph.nominal_cost_ms(4)
+        assert not benchmark_map.is_blocked(4)

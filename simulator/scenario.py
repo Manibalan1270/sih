@@ -379,8 +379,7 @@ def build(
     for index, home in enumerate(homes):
         robot_id = index + 1
         robot_zone = zones.assign(robot_id, home)
-        fleet.append(
-            Robot(
+        robot = Robot(
                 robot_id=robot_id,
                 graph=graph,
                 planner=AStarPlanner(graph),
@@ -397,7 +396,11 @@ def build(
                     else None
                 ),
             )
-        )
+        # The planner costs edges through the robot, so a robot's own temporary
+        # penalties reach its planning (FR-3.4). Wired after construction because the
+        # two refer to each other.
+        robot.planner.cost = robot.edge_cost
+        fleet.append(robot)
 
     # Log notes for small fleets, where they are the demo; suppress at scale,
     # where they would dominate memory without being read.

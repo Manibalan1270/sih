@@ -31,8 +31,39 @@ class Peer:
     held_task_id: int = -1
     intents_received: int = 0
 
+    next_nodes: tuple[int, ...] = ()
+    eta_ms: tuple[int, ...] = ()
+    """The peer's declared route horizon and arrival times, rebased onto the aligned
+    clock (section 3.4.1).
+
+    Kept so a robot can *anticipate* traffic ahead of it on an edge instead of
+    discovering it with a proximity sensor. Reactive proximity halting is what §1.5
+    defines stop-and-wait as, and FR-5.6/NFR-2.4 reserve braking for non-cooperative
+    obstacles -- which a peer broadcasting five times a second is not. Everything
+    needed to avoid it is already in the frame; it simply was not being retained."""
+
     def age_ms(self, now_ms: int) -> int:
         return max(0, now_ms - self.last_seen_ms)
+
+    @property
+    def heading_to(self) -> int:
+        """The next node the peer intends to cross, or -1 if it declared none."""
+        return self.next_nodes[0] if self.next_nodes else -1
+
+    def arrival_at(self, node: int) -> int | None:
+        """Aligned-clock arrival at ``node``, if the peer declared it."""
+        for declared, eta in zip(self.next_nodes, self.eta_ms):
+            if declared == node:
+                return eta
+        return None
+
+    def is_on_edge(self, from_node: int, to_node: int) -> bool:
+        """Whether the peer is traversing ``from_node -> to_node`` right now.
+
+        Direction matters: a peer coming the other way along a bidirectional aisle is
+        in the other lane and is not traffic to follow.
+        """
+        return self.current_node == from_node and self.heading_to == to_node
 
     def is_live(self, now_ms: int, timeout_ms: int = config.PEER_TIMEOUT_MS) -> bool:
         return self.age_ms(now_ms) <= timeout_ms
@@ -97,6 +128,8 @@ class PeerTable:
         state: int,
         battery_pct: int,
         held_task_id: int,
+        next_nodes: tuple[int, ...] = (),
+        eta_ms: tuple[int, ...] = (),
     ) -> Peer:
         """Record an INTENT from a peer, creating the entry if it is new.
 
@@ -115,6 +148,8 @@ class PeerTable:
         peer.state = state
         peer.battery_pct = battery_pct
         peer.held_task_id = held_task_id
+        peer.next_nodes = tuple(next_nodes)
+        peer.eta_ms = tuple(eta_ms)
         peer.intents_received += 1
         return peer
 

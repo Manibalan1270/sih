@@ -102,9 +102,20 @@ All found while implementing; all should be corrected in v1.1.
 7. **No requirement covers following distance.** FE-5 resolves who crosses a
    *node*; nothing addresses two robots travelling one aisle in the same
    direction, where the one behind simply drives into the one in front. NFR-2.1
-   permits zero collisions, so it has to be handled. Implemented as a reactive
-   headway rule on the forward obstacle sensor IF-2.4 already requires, which also
-   works against a peer whose radio has failed.
+   permits zero collisions, so it has to be handled.
+
+   This was first implemented as a reactive proximity halt on the forward sensor
+   IF-2.4 requires -- and that was a conformance problem, because §1.5 *defines*
+   stop-and-wait as halting when a peer comes within a fixed radius, and
+   FR-5.6/NFR-2.4 reserve braking for **non-cooperative obstacles**. A fleet peer
+   broadcasts INTENT five times a second, so it is not one. Measured at 44% of all
+   hold-time: the behaviour this project exists to replace, inside Configuration B.
+
+   Now anticipatory. A peer's INTENT already carries `next_nodes` and `eta_ms`, so a
+   follower measures separation in *time* -- the same reasoning junction arbitration
+   uses -- and opens the gap by shedding speed, which is what FR-5.6 prescribes. The
+   proximity sensor remains only as a last-resort net for things that do not
+   broadcast (FR-6.6, ASM-13). Reactive halting is down from 44% to 3% of hold-time.
 8. **RESERVE carries no direction, and INTENT's does not survive it.** Section
    3.4.2 gives RESERVE no approach or exit field, so an explicit claim arriving
    after an implied one discarded the geometry and made following traffic look
