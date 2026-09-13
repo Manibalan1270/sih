@@ -22,7 +22,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from communication.messages import Announce, MessageType
 from core import config
+from core.auction import Auctioneer
 from core.graph import Graph
 from core.planner_astar import AStarPlanner
 from core.robot import Robot
@@ -32,6 +34,7 @@ from core.task import Task
 from core.zones import ZoneMap
 from benchmark.task_generator import TaskSet, generate_for_map
 from simulator.engine import Engine, spawn_positions
+from simulator.mesh import GATEWAY_ID, Mesh, build_mesh
 
 
 class TaskAllocator(Protocol):
@@ -88,6 +91,106 @@ class RoundRobinAllocator:
 
 
 @dataclass
+class AuctionAllocator:
+    """Configuration B's allocator: the order gateway, and nothing more.
+
+    It broadcasts ANNOUNCE and then has no further part in the outcome. FR-4.1
+    forbids any component assigning a task to a named robot, and FR-4.6 forbids a
+    dispatcher, so this class deliberately has no way to pick a winner -- it cannot
+    even see the bids except as frames on the mesh like anyone else.
+
+    IF-3.2 and IF-3.3 confine the gateway to originating ANNOUNCE and the clock
+    beacon. It listens for CLAIM only so it can stop re-announcing work that has
+    been taken; that is bookkeeping about its own announcements, not a decision
+    about allocation.
+    """
+
+    name: str = "auction"
+    announced_at: dict[int, int] = field(default_factory=dict)
+    """task_id -> aligned time of its most recent ANNOUNCE."""
+
+    claimed: set[int] = field(default_factory=set)
+    finished: set[int] = field(default_factory=set)
+    """Tasks a robot has reported COMPLETE. Never announced again, whatever else
+    happens -- announcing finished work would have it delivered twice."""
+
+    reannounce_after_ms: int = config.AUCTION_WINDOW_MS + config.CLAIM_TIMEOUT_MS
+
+    def tick(self, sim: "Simulation", now_ms: int) -> None:
+        assert sim.mesh is not None, "the auction allocator needs a mesh"
+        self._absorb_claims(sim)
+
+        # A task handed back is unclaimed again, whatever we previously overheard.
+        for task_id in sim.reannounced:
+            if task_id in self.finished:
+                continue
+            self.claimed.discard(task_id)
+            self.announced_at.pop(task_id, None)
+        sim.reannounced.clear()
+
+        for task in sim.take_pending(now_ms):
+            if task.task_id in self.finished or task.task_id in self.claimed:
+                continue
+            last = self.announced_at.get(task.task_id)
+            if last is not None and now_ms - last < self.reannounce_after_ms:
+                # Already on the mesh and still inside its auction window plus the
+                # FR-4.12 claim timeout. Re-announcing now would double the auction
+                # traffic for no gain.
+                sim.defer(task)
+                continue
+            self.announced_at[task.task_id] = now_ms
+            sim.mesh.send(
+                GATEWAY_ID,
+                Announce(
+                    task_id=task.task_id,
+                    pickup_node=task.pickup,
+                    drop_node=task.drop,
+                    priority=task.priority,
+                    created_at_ms=task.created_at_ms,
+                    zone_id=task.zone_id,
+                ),
+                now_ms,
+            )
+            sim.engine.log("announce", None, f"task {task.task_id} ({self.name})")
+            sim.defer(task)  # stays pending until somebody claims it
+
+    def _absorb_claims(self, sim: "Simulation") -> None:
+        """Note which tasks are being worked, so they stop being announced.
+
+        CLAIM alone is not enough. It is a one-shot frame, and IF-4.5 forbids
+        requiring retransmission, so a gateway that missed one would keep
+        announcing work already under way -- and a second robot would win it and do
+        the job twice. Measured at 30% loss: 9 completions for 8 distinct tasks.
+
+        INTENT closes it. Every robot broadcasts its held task every 200 ms, so a
+        single lost frame is self-healing. Deriving state from overheard INTENT
+        rather than asking anyone is the same discipline FR-8.6 sets for the
+        dashboard, and it keeps the gateway inside IF-3.3: it still originates
+        nothing but ANNOUNCE and the clock beacon.
+        """
+        assert sim.mesh is not None
+        for message in sim.mesh.inbox(GATEWAY_ID):
+            if message.type is MessageType.CLAIM:
+                self._mark_taken(sim, message.payload.task_id)
+                sim.engine.log(
+                    "claim", message.sender, f"task {message.payload.task_id}"
+                )
+            elif message.type is MessageType.INTENT:
+                if message.payload.held_task_id >= 0:
+                    self._mark_taken(sim, message.payload.held_task_id)
+            elif message.type is MessageType.COMPLETE:
+                self.finished.add(message.payload.task_id)
+                self._mark_taken(sim, message.payload.task_id)
+            elif message.type is MessageType.ANNOUNCE:
+                # A robot re-announcing under FR-4.12. Treat it as unclaimed again.
+                self.claimed.discard(message.payload.task_id)
+
+    def _mark_taken(self, sim: "Simulation", task_id: int) -> None:
+        self.claimed.add(task_id)
+        sim.pending = [t for t in sim.pending if t.task_id != task_id]
+
+
+@dataclass
 class Simulation:
     """A scenario, built and ready to run."""
 
@@ -98,6 +201,7 @@ class Simulation:
     task_set: TaskSet
     allocator: TaskAllocator
     seed: int
+    mesh: Mesh | None = None
 
     pending: list[Task] = field(default_factory=list)
     """Announced but unallocated. Tasks arrive here at their release time and
@@ -105,6 +209,15 @@ class Simulation:
 
     _released: set[int] = field(default_factory=set, repr=False)
     completed: list[Task] = field(default_factory=list)
+
+    reannounced: set[int] = field(default_factory=set)
+    """Tasks a robot handed back this tick.
+
+    The allocator must clear these from whatever "already taken" bookkeeping it
+    keeps. Without it a task noted as claimed and then dropped is never announced
+    again and never completed -- and the run reports itself finished having done
+    less work than it was given, which is a silently flattering result rather than
+    a visible failure."""
 
     # -- task flow -----------------------------------------------------------
 
@@ -125,6 +238,7 @@ class Simulation:
             for task in robot.drain_released_tasks():
                 task.reannounce()
                 self.pending.append(task)
+                self.reannounced.add(task.task_id)
                 self.engine.log(
                     "reannounce",
                     robot.robot_id,
@@ -171,11 +285,19 @@ class Simulation:
 
     @property
     def is_finished(self) -> bool:
-        return (
-            not self.pending
-            and len(self._released) == len(self.task_set)
-            and self.engine.work_finished()
-        )
+        """Every task released, completed, and the fleet idle.
+
+        Completion is counted by distinct task id rather than by an empty pending
+        list. A defect that loses a task would otherwise satisfy "nothing pending,
+        fleet idle" and report success having done less work than it was given --
+        which is how a lost task first presented here. Now it runs to the time limit
+        and fails, which is the failure mode a benchmark needs.
+        """
+        if len(self._released) != len(self.task_set):
+            return False
+        if len({t.task_id for t in self.completed}) != len(self.task_set):
+            return False
+        return not self.pending and self.engine.work_finished()
 
     # -- reporting -----------------------------------------------------------
 
@@ -248,22 +370,62 @@ def build(
             f"physical_robots={scenario.physical_robots}"
         )
 
+    chosen_allocator = allocator or AuctionAllocator()
+    coordinated = not isinstance(chosen_allocator, RoundRobinAllocator)
+
     homes = spawn_positions(graph, fleet_size, seed=seed)
-    fleet = [
-        Robot(
-            robot_id=index + 1,
-            graph=graph,
-            planner=AStarPlanner(graph),
-            home_node=home,
-            zone_id=zones.assign(index + 1, home),
+    fleet = []
+    for index, home in enumerate(homes):
+        robot_id = index + 1
+        robot_zone = zones.assign(robot_id, home)
+        fleet.append(
+            Robot(
+                robot_id=robot_id,
+                graph=graph,
+                planner=AStarPlanner(graph),
+                home_node=home,
+                zone_id=robot_zone,
+                # Configuration A gets no auctioneer at all. FR-10.5 requires the
+                # baseline to exchange no intent, and withholding the collaborator
+                # makes that structural rather than a matter of remembering not to.
+                auctioneer=Auctioneer(robot_id=robot_id) if coordinated else None,
+                zone_eligible=(
+                    (lambda task_zone, mine=robot_zone: zones.eligible_to_bid(mine, task_zone))
+                    if coordinated
+                    else None
+                ),
+            )
         )
-        for index, home in enumerate(homes)
-    ]
 
     # Log notes for small fleets, where they are the demo; suppress at scale,
     # where they would dominate memory without being read.
     notes = log_notes if log_notes is not None else fleet_size <= 10
-    engine = Engine(graph=graph, robots=fleet, seed=seed, log_notes=notes)
+
+    mesh: Mesh | None = None
+    if coordinated:
+        by_id = {r.robot_id: r for r in fleet}
+
+        def position_of(member_id: int) -> tuple[int, int] | None:
+            robot = by_id.get(member_id)
+            return robot.position_mm() if robot is not None else None
+
+        # Range filtering is what makes INTENT delivery proportional to neighbours
+        # rather than to fleet size (FR-9.4), and what keeps 100 robots tractable.
+        # On the 30 x 22 m benchmark map a 40 m radio covers everything, so bench3
+        # behaves as a flood -- correct, since section 4.9 says a flood auction is
+        # right at 3-5 AMRs.
+        mesh = build_mesh(
+            seed=seed,
+            id_bits=scenario.edge_id_bits,
+            position_of=position_of,
+        )
+        for robot in fleet:
+            mesh.join(robot.robot_id)
+        mesh.join(GATEWAY_ID)
+
+    engine = Engine(
+        graph=graph, robots=fleet, seed=seed, log_notes=notes, mesh=mesh
+    )
 
     task_set = generate_for_map(
         graph,
@@ -280,6 +442,7 @@ def build(
         zones=zones,
         engine=engine,
         task_set=task_set,
-        allocator=allocator or RoundRobinAllocator(),
+        allocator=chosen_allocator,
         seed=seed,
+        mesh=mesh,
     )

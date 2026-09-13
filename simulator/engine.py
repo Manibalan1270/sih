@@ -61,6 +61,13 @@ class Engine:
     tick_ms: int = config.MOTION_TICK_MS
     tick: int = 0
 
+    mesh: object | None = None
+    """The message bus, or None for a fleet that does not communicate.
+
+    None is Configuration A: FR-10.5 requires the baseline to exchange no intent at
+    all, and giving it no mesh makes that structural rather than a matter of
+    remembering not to send."""
+
     collision_detector: CollisionDetector = field(default_factory=CollisionDetector)
     events: list[SimEvent] = field(default_factory=list)
     log_notes: bool = True
@@ -122,6 +129,8 @@ class Engine:
         lost power cannot send one.
         """
         self._disabled.add(robot_id)
+        if self.mesh is not None:
+            self.mesh.leave(robot_id)
         self.log("robot_killed", robot_id, "powered off mid-run")
 
     def revive(self, robot_id: int) -> None:
@@ -145,10 +154,16 @@ class Engine:
         Deciding and moving robot-by-robot would let a robot see a peer that had
         already moved this tick, which is information a real robot could not have.
         """
+        if self.mesh is not None:
+            self.mesh.deliver()
+
         commands = []
         for robot in self.active_robots:
             before = robot.state
-            result = robot.step(self.now_ms)
+            inbox = (
+                self.mesh.inbox(robot.robot_id) if self.mesh is not None else None
+            )
+            result = robot.step(self.now_ms, inbox)
             commands.append((robot, result))
             if before is not robot.state:
                 self.log(
@@ -160,8 +175,12 @@ class Engine:
                 for note in result.notes:
                     self.log("note", robot.robot_id, note)
 
+        # Motion and transmission after every decision, so nothing a robot does
+        # this tick can be observed by a peer deciding in the same tick.
         for robot, result in commands:
             self._apply_motion(robot, result)
+            if self.mesh is not None and result.outbox:
+                self.mesh.send_all(robot.robot_id, result.outbox, self.now_ms)
 
         collisions = self.collision_detector.check(self.now_ms, self.poses())
         for collision in collisions:

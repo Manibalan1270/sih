@@ -48,6 +48,7 @@ class Event(str, Enum):
     EDGE_BLOCKED = "EDGE_BLOCKED"
     ROUTE_REPAIRED = "ROUTE_REPAIRED"
     ARRIVED_AT_DROP = "ARRIVED_AT_DROP"
+    TASK_WITHDRAWN = "TASK_WITHDRAWN"
     TASK_REPORTED = "TASK_REPORTED"
     BATTERY_LOW = "BATTERY_LOW"
     CHARGED = "CHARGED"
@@ -74,6 +75,14 @@ class Event(str, Enum):
 #   *pickup* also ends a route and needs a new one. PLANNING is where routes come
 #   from, so that is where it goes. Without this the pickup arrival would have to
 #   masquerade as a blockage, which would corrupt the replan metric.
+#
+# TASK_WITHDRAWN -> IDLE, from every state that holds work.  Appendix A has no
+#   transition for a task being taken away from a robot, but FR-4.8 creates one:
+#   where two AMRs claimed the same task, the higher robot_id must relinquish it,
+#   and it may already be part-way through the job. The robot did not fail, the
+#   route did not break, and the task is not unreachable -- so none of the existing
+#   events describe it. Without this the robot sits in MOVING holding nothing,
+#   which is exactly how it presented: a fleet stalled under packet loss.
 TRANSITIONS: dict[State, dict[Event, State]] = {
     State.IDLE: {
         Event.TASK_ANNOUNCED: State.BIDDING,
@@ -88,6 +97,7 @@ TRANSITIONS: dict[State, dict[Event, State]] = {
     },
     State.PLANNING: {
         Event.ROUTE_READY: State.MOVING,
+        Event.TASK_WITHDRAWN: State.IDLE,
         # FR-3.7 / FR-6.2: an unreachable task returns to the mesh and the robot
         # returns to IDLE. It is not a fault -- the map changed, not the robot.
         Event.ROUTE_UNREACHABLE: State.IDLE,
@@ -95,6 +105,7 @@ TRANSITIONS: dict[State, dict[Event, State]] = {
     },
     State.MOVING: {
         Event.CONFLICT_LOST: State.YIELD,
+        Event.TASK_WITHDRAWN: State.IDLE,
         Event.EDGE_BLOCKED: State.REPLAN,
         Event.LEG_COMPLETE: State.PLANNING,
         Event.ARRIVED_AT_DROP: State.AT_DROP,
@@ -102,16 +113,19 @@ TRANSITIONS: dict[State, dict[Event, State]] = {
     },
     State.YIELD: {
         Event.CONFLICT_CLEARED: State.MOVING,
+        Event.TASK_WITHDRAWN: State.IDLE,
         Event.EDGE_BLOCKED: State.REPLAN,
         Event.FAULT_DETECTED: State.FAULT,
     },
     State.REPLAN: {
         Event.ROUTE_REPAIRED: State.MOVING,
+        Event.TASK_WITHDRAWN: State.IDLE,
         Event.ROUTE_UNREACHABLE: State.IDLE,
         Event.FAULT_DETECTED: State.FAULT,
     },
     State.AT_DROP: {
         Event.TASK_REPORTED: State.IDLE,
+        Event.TASK_WITHDRAWN: State.IDLE,
         Event.FAULT_DETECTED: State.FAULT,
     },
     State.CHARGING: {

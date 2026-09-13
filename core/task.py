@@ -126,6 +126,18 @@ class Task:
         """Where the holder should be heading right now."""
         return self.pickup if self.leg is Leg.TO_PICKUP else self.drop
 
+    def remaining_objectives(self) -> tuple[int, ...]:
+        """Nodes still to be visited for this task, in order.
+
+        A task already collected has only its drop left. This matters to the
+        auction: pricing a half-finished task from its pickup again would inflate
+        every bid a busy robot makes, and hand work to idle robots that should not
+        have won it.
+        """
+        if self.leg is Leg.TO_PICKUP:
+            return (self.pickup, self.drop)
+        return (self.drop,)
+
     @property
     def is_open(self) -> bool:
         """Whether this task still needs a robot."""

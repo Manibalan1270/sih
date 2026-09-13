@@ -26,10 +26,21 @@ use are marked.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from communication.messages import (
+    Announce,
+    Bid,
+    Claim,
+    Complete,
+    Intent,
+    Message,
+    MessageType,
+)
 from core import config
+from core.auction import NO_WINNER, Auctioneer
 from core.graph import Graph
 from core.state_machine import Event, State, StateMachine
 from core.task import Leg, Task, TaskQueue, TaskState
@@ -45,6 +56,15 @@ class RoutePlanner(Protocol):
     """
 
     def route(self, start: int, goal: int) -> list[int] | None:
+        ...
+
+    def travel_cost(self, start: int, goal: int) -> int:
+        """Least cost between two nodes, or ``INFINITE_COST`` if unreachable.
+
+        Separate from ``route`` because the auction prices journeys rather than
+        following them, and should not have to build and discard a route to find
+        out what one would cost (FR-4.3).
+        """
         ...
 
 
@@ -74,12 +94,26 @@ class StepResult:
     """Everything one tick of the decision loop produced."""
 
     command: MotionCommand
-    frames: list[bytes] = field(default_factory=list)
-    """Messages to broadcast. Populated from Phase 5 onward."""
+    outbox: list[object] = field(default_factory=list)
+    """Message payloads to broadcast.
+
+    Typed payload objects, not encoded bytes. Encoding belongs at the mesh
+    boundary, so identifier width and CRC never reach the decision logic -- which
+    is what lets the same robot object run over the in-process bus, real UDP, and
+    an ESP-NOW bridge without noticing (IF-3.1)."""
 
     notes: list[str] = field(default_factory=list)
     """Human-readable record of what was decided and why. Feeds the dashboard's
     per-robot decision panel and the benchmark event log."""
+
+
+_STATE_CODES: dict[State, int] = {
+    state: index for index, state in enumerate(State)
+}
+"""State to the uint8 the INTENT ``state`` field carries (section 3.4.1).
+
+Derived from declaration order rather than written out, so a state added to
+Appendix A cannot be forgotten here and silently encode as another state."""
 
 
 @dataclass
@@ -138,6 +172,14 @@ class Robot:
     machine: StateMachine = field(default_factory=StateMachine)
     queue: TaskQueue = field(default_factory=lambda: TaskQueue(config.QUEUE_CAP))
     metrics: RobotMetrics = field(default_factory=RobotMetrics)
+    auctioneer: Auctioneer | None = None
+    """This robot's own participation in task allocation (FE-4). None disables
+    bidding, which is how Configuration A's baseline runs the same robot object
+    with no auction at all (FR-10.5)."""
+
+    zone_eligible: Callable[[int], bool] | None = None
+    """Whether a task in a given zone may be bid on (FR-4.14, FR-9.3). Injected so
+    the robot never has to know how the warehouse is partitioned."""
 
     route: list[int] = field(default_factory=list)
     route_index: int = 0
@@ -159,6 +201,9 @@ class Robot:
     IDLE -> PLANNING -> IDLE forever, re-failing the same plan every tick. The
     auction layer drains this list and re-announces, so the task gets another
     chance from another robot -- or from this one once the blockage clears."""
+
+    _last_intent_ms: int = -10_000
+    """When INTENT was last broadcast. Negative so the first tick emits one."""
 
     _drain_accumulator_mm: int = 0
     """Sub-percent battery drain carried between ticks. See ``drain_battery``."""
@@ -241,14 +286,37 @@ class Robot:
 
     # -- the decision loop ---------------------------------------------------
 
-    def step(self, now_ms: int) -> StepResult:
+    def step(self, now_ms: int, inbox: list[Message] | None = None) -> StepResult:
         """One tick of the robot's own decision making.
 
-        Deliberately a flat dispatch on state rather than a chain of conditions.
+        Order within the tick matters. Messages are processed first, because what
+        peers said changes what this robot should decide; then auctions are
+        advanced; then the state machine acts. Deciding before reading the inbox
+        would make the robot act on a world one tick stale.
+
+        The state dispatch is deliberately flat rather than a chain of conditions.
         Appendix A defines behaviour per state, and matching that shape means a
         reviewer can check this against the SRS table line by line.
         """
         result = StepResult(command=MotionCommand.hold())
+
+        if inbox:
+            self._handle_inbox(inbox, now_ms, result)
+        if self.auctioneer is not None:
+            self._advance_auctions(now_ms, result)
+            self._emit_intent(now_ms, result)
+
+        # Invariant guard. A robot in a working state with no task cannot make
+        # progress and will never report itself finished, so a defect that produces
+        # one turns into a hung run rather than a failing assertion -- the worst
+        # failure mode for a benchmark. Recover instead of hanging.
+        if self.machine.holds_task and self.queue.current is None:
+            self.machine.fire_if_possible(Event.TASK_WITHDRAWN, now_ms)
+            result.notes.append(
+                "held no task while in a working state; returned to IDLE"
+            )
+            self.route, self.route_index = [], 0
+            self.next_node, self.edge_id, self.progress_mm = None, None, 0
 
         if self.state is State.IDLE:
             self._step_idle(now_ms, result)
@@ -265,6 +333,314 @@ class Robot:
         # the auction itself is driven by messages, not by this loop.
 
         return result
+
+    # -- messaging -----------------------------------------------------------
+
+    def _handle_inbox(self, inbox: list[Message], now_ms: int, result: StepResult) -> None:
+        """Act on what peers said this tick.
+
+        Unknown message types are ignored rather than rejected. A fleet is not
+        necessarily uniform in firmware version during a rolling update, and a
+        robot that faulted on a message type it did not recognise would turn a
+        compatible addition into a fleet-wide outage.
+        """
+        auctioneer = self.auctioneer
+        for message in inbox:
+            payload = message.payload
+            if auctioneer is None:
+                continue
+            if message.type is MessageType.INTENT:
+                self._on_peer_intent(message.sender, payload, now_ms, result)
+            elif message.type is MessageType.COMPLETE:
+                self._on_peer_complete(message.sender, payload.task_id, now_ms, result)
+            elif message.type is MessageType.ANNOUNCE:
+                self._on_announce(payload, message.timestamp_ms, result)
+            elif message.type is MessageType.BID:
+                auctioneer.on_bid(
+                    payload.task_id, message.sender, payload.bid_value, payload.is_idle
+                )
+            elif message.type is MessageType.CLAIM:
+                note = auctioneer.on_claim(
+                    payload.task_id, message.sender, payload.bid_value, now_ms
+                )
+                result.notes.append(note)
+                self._relinquish_if_lost(payload.task_id, now_ms, result)
+
+    def _emit_intent(self, now_ms: int, result: StepResult) -> None:
+        """Broadcast INTENT every 200 ms (FR-1.1, tolerance +/-20 ms).
+
+        The continuous heartbeat of the whole protocol. Phase 6 consumes it to build
+        reservation tables; it exists already because FR-4.8's loss tolerance
+        depends on it -- see ``Intent.held_task_id``.
+
+        A robot that stops sending INTENT is indistinguishable from a dead one after
+        PEER_TIMEOUT_MS (FR-1.5), so this is emitted in *every* state including
+        IDLE, CHARGING and FAULT. Appendix A's broadcasting column says the same.
+        """
+        if now_ms - self._last_intent_ms < config.INTENT_PERIOD_MS:
+            return
+        self._last_intent_ms = now_ms
+
+        horizon = self.remaining_route[1 : 1 + config.INTENT_HORIZON]
+        etas: list[int] = []
+        running = self._remaining_on_current_edge_ms()
+        previous = self.next_node if self.next_node is not None else self.current_node
+        for node in horizon:
+            if node != previous:
+                edge = self.graph.edge_between(previous, node)
+                running += self.graph.nominal_cost_ms(edge) if edge is not None else 0
+            etas.append(running)
+            previous = node
+
+        held = self.queue.current
+        result.outbox.append(
+            Intent(
+                current_node=self.current_node,
+                next_nodes=tuple(horizon),
+                eta_ms=tuple(etas),
+                priority=self.task_priority,
+                state=_STATE_CODES[self.state],
+                battery_pct=self.battery_pct,
+                pheromone=0,  # Phase 8 fills this from the traffic model
+                held_task_id=held.task_id if held is not None else -1,
+            )
+        )
+
+    def _remaining_on_current_edge_ms(self) -> int:
+        """Time still to run on the edge being traversed, for the first ETA."""
+        if self.edge_id is None:
+            return 0
+        length = max(1, self.graph.length_mm(self.edge_id))
+        left = max(0, length - self.progress_mm)
+        return self.graph.nominal_cost_ms(self.edge_id) * left // length
+
+    def _on_peer_intent(self, sender: int, payload: Intent, now_ms: int, result: StepResult) -> None:
+        """React to a peer's heartbeat.
+
+        At this phase that means one thing: healing a duplicate task holding that a
+        lost CLAIM left behind (FR-4.8). Phase 6 adds reservation-table and traffic
+        model updates from the same frame, which is what FR-1.8 means by one frame
+        updating both.
+        """
+        held = payload.held_task_id
+        if held < 0 or not self.queue.holds(held):
+            return
+        if sender >= self.robot_id:
+            return  # we outrank them; they will let go when they hear our INTENT
+        if self.auctioneer is not None:
+            self.auctioneer.settled[held] = sender
+        # Hand it back to the mesh. The peer is doing it, so an announcement is
+        # redundant -- but the gateway suppresses announcements for any task it hears
+        # an INTENT holding, so redundancy costs one frame at worst. Dropping it
+        # silently would lose the task outright if this heal turned out to be wrong,
+        # and a lost task is far worse than a wasted ANNOUNCE.
+        self._drop_task(held, now_ms, hand_back=True)
+        result.notes.append(
+            f"r{sender} also holds task {held} and outranks me; relinquishing "
+            f"(FR-4.8, healed via INTENT)"
+        )
+
+    def _on_peer_complete(
+        self, sender: int, task_id: int, now_ms: int, result: StepResult
+    ) -> None:
+        """A peer finished a task. Drop it if we somehow hold it too.
+
+        This closes the last hole in FR-4.8's loss tolerance. INTENT healing covers a
+        duplicate holding while both robots are still working, but a peer that
+        *finished* the job before we ever heard an INTENT mentioning it would leave
+        us doing completed work -- which showed up as 9 completions for 8 distinct
+        tasks at 30% packet loss. The work is already done; carrying on would
+        deliver the same goods twice.
+        """
+        if task_id < 0 or not self.queue.holds(task_id):
+            return
+        if self.auctioneer is not None:
+            self.auctioneer.settled[task_id] = sender
+        # Not handed back: the work is done, so announcing it again would have a
+        # third robot deliver the same goods.
+        self._drop_task(task_id, now_ms, hand_back=False)
+        result.notes.append(
+            f"r{sender} already completed task {task_id}; dropping my copy"
+        )
+
+    def _drop_task(self, task_id: int, now_ms: int, *, hand_back: bool) -> None:
+        """Let go of a task.
+
+        ``hand_back`` decides whether it returns to the mesh. Hand back when another
+        robot merely *holds* it -- if that belief is wrong the task must not vanish.
+        Do not hand back when a peer has *completed* it, or a third robot would win
+        it and repeat finished work.
+        """
+        current = self.queue.current
+        if current is not None and current.task_id == task_id:
+            dropped = self.queue.pop_current()
+            if hand_back and dropped is not None:
+                dropped.release(now_ms)
+                self.released_tasks.append(dropped)
+            self.task_priority = 0
+            self.route, self.route_index = [], 0
+            self.next_node, self.edge_id, self.progress_mm = None, None, 0
+            self.machine.fire_if_possible(Event.TASK_WITHDRAWN, now_ms)
+        else:
+            removed = self.queue.remove(task_id)
+            if hand_back and removed is not None:
+                removed.release(now_ms)
+                self.released_tasks.append(removed)
+
+    def _on_announce(self, payload: Announce, announced_at_ms: int, result: StepResult) -> None:
+        assert self.auctioneer is not None
+        task = Task(
+            task_id=payload.task_id,
+            pickup=payload.pickup_node,
+            drop=payload.drop_node,
+            priority=payload.priority,
+            created_at_ms=payload.created_at_ms,
+            zone_id=payload.zone_id,
+        )
+        if self.auctioneer.on_announce(task, announced_at_ms) is not None:
+            result.notes.append(f"heard ANNOUNCE for task {task.task_id}")
+
+    def _relinquish_if_lost(self, task_id: int, now_ms: int, result: StepResult) -> None:
+        """FR-4.8: let go of a task a lower robot_id also claimed.
+
+        Reachable in ordinary operation, not only under attack: one lost BID is
+        enough to make two robots compute different winners (TC-9).
+        """
+        assert self.auctioneer is not None
+        if not self.queue.holds(task_id):
+            return
+        if not self.auctioneer.must_relinquish(task_id):
+            return
+        holding_current = self.queue.current is not None and self.queue.current.task_id == task_id
+        if holding_current:
+            self._release_current(now_ms, unreachable=False)
+            # The state machine must be told, or the robot stays in MOVING holding
+            # nothing and never reports itself finished. That is how this presented:
+            # every task complete, one robot stuck mid-route forever.
+            self.machine.fire_if_possible(Event.TASK_WITHDRAWN, now_ms)
+        else:
+            removed = self.queue.remove(task_id)
+            if removed is not None:
+                removed.release(now_ms)
+                self.released_tasks.append(removed)
+        self.auctioneer.relinquished += 1
+        result.notes.append(f"relinquished task {task_id} to a lower robot_id (FR-4.8)")
+
+    def _advance_auctions(self, now_ms: int, result: StepResult) -> None:
+        """Bid, and decide auctions whose window has closed.
+
+        There is no auctioneer in the protocol (FR-4.6): this robot sorts the bids
+        it happened to hear and reaches its own conclusion. Every robot does the
+        same, and they agree whenever nothing was lost.
+        """
+        auctioneer = self.auctioneer
+        assert auctioneer is not None
+
+        for auction in sorted(
+            auctioneer.open_auctions.values(), key=lambda a: a.task.task_id
+        ):
+            if auction.own_bid is not None or auction.settled:
+                continue
+            if auction.is_window_closed(now_ms):
+                continue  # too late to bid; the window is measured from ANNOUNCE
+
+            allowed, reason = auctioneer.may_bid(
+                queue_length=len(self.queue),
+                battery_pct=self.battery_pct,
+                zone_eligible=(
+                    True if self.zone_eligible is None
+                    else self.zone_eligible(auction.task.zone_id)
+                ),
+                faulted=self.state is State.FAULT,
+            )
+            if not allowed:
+                result.notes.append(f"not bidding on task {auction.task.task_id}: {reason}")
+                auction.settled = True  # nothing more to do with it here
+                continue
+
+            bid = auctioneer.price(
+                auction.task,
+                start_node=self.current_node,
+                queue=self.queue,
+                battery_pct=self.battery_pct,
+                travel_cost=self.planner.travel_cost,
+                now_ms=now_ms,
+                is_idle=self.is_idle,
+            )
+            if bid is None:
+                result.notes.append(
+                    f"not bidding on task {auction.task.task_id}: unroutable for me"
+                )
+                auction.settled = True
+                continue
+
+            auction.own_bid = bid
+            auction.record_own(bid)
+            auctioneer.bids_placed += 1
+            self.metrics.bids_sent += 1
+            result.outbox.append(
+                Bid(task_id=bid.task_id, bid_value=bid.value, is_idle=bid.is_idle)
+            )
+            result.notes.append(str(bid))
+
+        for auction in auctioneer.closing(now_ms):
+            winner = auction.winner()
+            if winner == NO_WINNER:
+                # FR-4.13: nobody bid. Hand it back so it is re-announced with its
+                # aging term still accruing.
+                auctioneer.conclude(auction.task.task_id, NO_WINNER)
+                continue
+            if winner != self.robot_id:
+                auctioneer.conclude(auction.task.task_id, winner)
+                result.notes.append(
+                    f"task {auction.task.task_id} lost to r{winner}"
+                )
+                continue
+            if self.queue.is_full:
+                # Won, but filled up since bidding. Decline rather than exceed the
+                # cap: BR-3 is a hard limit, and the insertion cost this robot
+                # quoted no longer describes the plan it holds.
+                auctioneer.conclude(auction.task.task_id, NO_WINNER)
+                result.notes.append(
+                    f"won task {auction.task.task_id} but queue filled; declining"
+                )
+                continue
+
+            bid = auction.own_bid
+            assert bid is not None
+            result.outbox.append(Claim(task_id=bid.task_id, bid_value=bid.value))
+            # Record our own claim before concluding. A robot does not hear its own
+            # broadcast, so without this its auctioneer holds no claim at all, and
+            # the first peer CLAIM to arrive looks like the winner -- making even the
+            # lowest-id robot relinquish work it had correctly won.
+            auctioneer.on_claim(bid.task_id, self.robot_id, bid.value, now_ms)
+            self.accept_task(
+                auction.task, now_ms, bid=bid.value, at_index=bid.insert_at
+            )
+            auctioneer.conclude(auction.task.task_id, self.robot_id)
+            result.notes.append(f"WON task {bid.task_id} at {bid.value}; claiming")
+
+        for auction in auctioneer.overdue_claims(now_ms):
+            # FR-4.12: the winner never claimed. The runner-up re-announces, so
+            # responsibility is fixed rather than left to whoever notices first --
+            # which would produce a burst of duplicate announcements.
+            if auction.runner_up() != self.robot_id:
+                continue
+            auctioneer.conclude(auction.task.task_id, NO_WINNER)
+            result.outbox.append(
+                Announce(
+                    task_id=auction.task.task_id,
+                    pickup_node=auction.task.pickup,
+                    drop_node=auction.task.drop,
+                    priority=auction.task.priority,
+                    created_at_ms=auction.task.created_at_ms,
+                    zone_id=auction.task.zone_id,
+                )
+            )
+            result.notes.append(
+                f"winner of task {auction.task.task_id} never claimed; "
+                f"re-announcing as runner-up (FR-4.12)"
+            )
 
     def _step_idle(self, now_ms: int, result: StepResult) -> None:
         if self.queue:
@@ -337,6 +713,9 @@ class Robot:
             task.complete(now_ms)
             self.metrics.tasks_completed += 1
             self.completed_tasks.append(task)
+            # Appendix A: AT_DROP broadcasts COMPLETE. Peers need it so a task
+            # they heard claimed is not left looking abandoned forever.
+            result.outbox.append(Complete(task_id=task.task_id))
             result.notes.append(f"completed {task} in {task.completion_ms()} ms")
         self.task_priority = 0
         self.machine.fire(Event.TASK_REPORTED, now_ms)

@@ -228,6 +228,16 @@ itself anticipates the revision -- "packet field widths and memory budget must
 be revised".
 """
 
+RADIO_RANGE_MM = 40_000
+"""Modelled ESP-NOW broadcast range, 40 m.
+
+Load-bearing for ASM-7, the SRS's own "single most critical assumption": any two
+AMRs that can physically collide must be within radio range of one another. 40 m
+comfortably covers the 30 x 22 m benchmark map, so bench3 behaves as a flood --
+which is correct, since section 4.9 says a flood auction is right at 3-5 AMRs. On
+the 92 x 55 m scale map it genuinely limits reach, which is what makes INTENT
+delivery proportional to neighbours rather than to fleet size (FR-9.4)."""
+
 MAX_NODES_8BIT = 255
 MAX_EDGES_8BIT = 255
 MAX_NODES_16BIT = 65_535

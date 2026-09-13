@@ -56,7 +56,7 @@ Enforced by `tests/test_architecture.py`, not by convention:
 
 ## Known SRS defects
 
-Both found while implementing; both should be corrected in v1.1.
+All found while implementing; all should be corrected in v1.1.
 
 1. **Graph size.** ASM-2 and CON-10 cap node and edge ids at 8 bits (<=255
    edges), but Appendix D sizes the memory budget for 400 edges. Worked around
@@ -67,6 +67,22 @@ Both found while implementing; both should be corrected in v1.1.
    triples the traffic. Resolved by partitioning the scale map into 24 zones,
    which meets the budget with adjacent-zone eligibility honoured. See
    `ZONE_BUDGET_NOTE` in `scripts/generate_maps.py`.
+3. **INTENT carries no task identity.** FR-4.8 requires that where two AMRs claim
+   the same task, the lower `robot_id` retains it and the other relinquishes
+   within one auction cycle. CLAIM is a one-shot frame and IF-4.5 forbids
+   requiring retransmission, so a robot whose peer's CLAIM was lost has no way to
+   discover the collision -- it keeps the task and does the work twice. Measured
+   at 30% packet loss before the fix: 13 completions for 9 tasks, with one task
+   held by two robots at once. Resolved by adding `held_task_id` to INTENT, which
+   makes the healing self-repairing on the 200 ms heartbeat the SRS already
+   relies on elsewhere. Costs 2 bytes.
+4. **Appendix A has no transition for work being taken away.** FR-4.8 creates
+   one: a robot that must relinquish may be part-way through the job. The robot
+   has not failed, the route is intact, and the task is not unreachable, so none
+   of Appendix A's events describe it. Added as `TASK_WITHDRAWN`.
+5. **Three required message types are missing from the section 3.4 table**:
+   COMPLETE (Appendix A has AT_DROP broadcast it), BLOCKAGE (FR-6.1) and BEACON
+   (FR-7.4). All three are implemented.
 
 ## Status
 

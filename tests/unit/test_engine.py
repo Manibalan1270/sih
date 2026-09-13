@@ -145,10 +145,10 @@ class TestTickOrdering:
         original_steps = [r.step for r in robots]
 
         def spy(robot, original):
-            def wrapped(now_ms):
+            def wrapped(now_ms, inbox=None):
                 first = engine.poses()[0]
                 seen.append((first.x_mm, first.y_mm))
-                return original(now_ms)
+                return original(now_ms, inbox)
             return wrapped
 
         for robot, original in zip(robots, original_steps):
