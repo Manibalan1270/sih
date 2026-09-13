@@ -144,6 +144,13 @@ class Robot:
     """Index in ``route`` of ``current_node``. The remaining route is
     ``route[route_index:]``."""
 
+    completed_tasks: list[Task] = field(default_factory=list)
+    """Finished tasks awaiting collection by whatever is measuring the run.
+
+    The robot keeps them rather than discarding them because FR-10.2 needs the
+    per-task completion time, and that is only knowable from the task object --
+    a position log cannot tell you when an order was satisfied."""
+
     released_tasks: list[Task] = field(default_factory=list)
     """Tasks this robot has handed back to the mesh (FR-6.2, FR-3.7).
 
@@ -329,6 +336,7 @@ class Robot:
         if task is not None:
             task.complete(now_ms)
             self.metrics.tasks_completed += 1
+            self.completed_tasks.append(task)
             result.notes.append(f"completed {task} in {task.completion_ms()} ms")
         self.task_priority = 0
         self.machine.fire(Event.TASK_REPORTED, now_ms)
