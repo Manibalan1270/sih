@@ -125,15 +125,42 @@ All found while implementing; all should be corrected in v1.1.
 9. **Three required message types are missing from the section 3.4 table**:
    COMPLETE (Appendix A has AT_DROP broadcast it), BLOCKAGE (FR-6.1) and BEACON
    (FR-7.4). All three are implemented.
+10. **Junction occupancy is specified as a time, but the conflict it must prevent
+    is a distance.** Appendix E fixes `JUNCTION_OCCUPANCY_MS` at 700 ms, and
+    arbitration.py justifies a constant by ASM-6's homogeneous fleet. ASM-6 gives a
+    homogeneous *nominal* speed, and a robot that yields travels at
+    `YIELD_SPEED_MM_S` -- a third of it. So 700 ms buys 560 mm of clearance at
+    nominal speed and 168 mm at yield speed, while the geometry that has to be
+    covered extends 1200 mm each side of the node (derivation in
+    `config.JUNCTION_FOOTPRINT_MM`, pinned by `tests/unit/test_geometry.py`). A
+    yielding robot therefore outlives its own reservation and crosses the corner
+    unclaimed. **Open** -- it is the cause of every remaining bench3 failure at
+    3 AMRs, and the fix is to size the window from distance and renew it while the
+    robot is still inside the footprint.
+11. **Nothing gives a robot already inside a single-lane corridor the right to
+    finish traversing it.** FR-5.10 puts the decision at the last passing point and
+    ranks the contenders by the Appendix C total order -- but that order is only
+    meaningful between robots that both still have a choice. A robot already
+    committed to a single-lane aisle cannot reverse and cannot be passed, so being
+    outranked cannot make it leave. Observed on seed 6: r2 outranked r3 and entered
+    e4 while r3 was 4524 mm of 6000 into it, and they closed to 492 mm. Resolved by
+    treating an opposing occupant as a fact rather than a contender.
 
 ## Status
 
-Phases 0-6 complete. `bench3` records **zero inter-robot collisions across 8
-seeds with every run finishing** -- the Phase 6 gate and the AC-2 target.
+Phases 0-7b complete. `bench3` at 3 AMRs is clean over **8 seeds** and fails
+**3 of 20**: one collision (seed 13), one deadlock (seed 14) and one run that does
+not finish inside 4,000,000 ms (seed 16).
 
-At 3 AMRs this holds at both densities tried -- 12 tasks over 4 waves and 24 tasks
-in a single wave -- with zero collisions and every run finishing. TC-3's single-lane
-ring also clears.
+That distinction matters and the earlier wording here hid it. The Phase 6 gate was
+read as met because the first 8 seeds pass, and the same 8 seeds were used to clear
+Phase 7b. Widening to 20 shows AC-2 is **not** met at 3 AMRs. All three failures are
+SRS defect 10 above -- the junction-corner footprint -- in three guises: two robots
+converging in the corner unseen, the corner reading as headway and closing a wait-for
+cycle against a junction yield, and the congestion that follows from both.
+
+Both densities tried at 3 AMRs -- 12 tasks over 4 waves and 24 in a single wave --
+behave the same way. TC-3's single-lane ring clears.
 
 Three defects behind earlier failures, all of which presented as coordination
 deadlocks and none of which were:

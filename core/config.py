@@ -360,6 +360,54 @@ on the same node from different aisles come within a footprint of each other bef
 either has entered it -- which the collision detector correctly reports and which
 arbitrating *entry* alone does not prevent."""
 
+JUNCTION_FOOTPRINT_MM = 1200
+"""How far from a junction two robots on *perpendicular* edges can still collide.
+
+Derived from the lane offset, not chosen. Robots keep AISLE_LANE_OFFSET_MM to one side
+of the aisle centre (ASM-5), and the offset is a consistent perpendicular -- which
+means that on two perpendicular aisles the two offset lanes *cross* near the junction.
+For one robot d1 short of the node and another d2 past it, separation is
+
+    sqrt((d1 - AISLE_LANE_OFFSET_MM)**2 + (d2 - AISLE_LANE_OFFSET_MM)**2)
+
+which falls below COLLISION_DISTANCE_MM whenever (d1, d2) lies within
+COLLISION_DISTANCE_MM of (700, 700) -- so for either distance anywhere up to about
+1200 mm. Both robots can be well over a metre from the node, on edges that do not
+share a lane, and still be 500 mm apart.
+
+Only the arrive-while-the-other-departs pairing is exposed. Both-arriving gives
+sqrt((d1-L)**2 + (d2+L)**2) and both-departing sqrt((d1+L)**2 + (d2-L)**2), and
+neither can fall below the lane offset itself. A turn is what crosses the lanes.
+
+**Not yet enforced, and this is the open defect.** JUNCTION_OCCUPANCY_MS reserves a
+junction for a fixed 700 ms, which is 560 mm of travel at NOMINAL_SPEED_MM_S and only
+168 mm at YIELD_SPEED_MM_S -- against a footprint that extends 1200 mm each side. A
+yielding robot therefore outlives its own claim and crosses the corner unreserved.
+Every remaining bench3 failure at 3 AMRs is this. See tests/unit/test_geometry.py,
+which pins the derivation, and README's defect 10.
+"""
+
+YIELD_STANDOFF_MM = JUNCTION_CLEARANCE_MM + COLLISION_DISTANCE_MM
+"""How far short of a junction a yielding robot actually stops.
+
+Must be strictly greater than the radius at which a robot counts as *occupying* the
+node ahead, and that distinction is the whole point. Those were the same constant,
+which meant a yielding robot came to rest exactly on the occupancy boundary of the
+junction it had just given away -- so it blocked the winner's approach to it. Measured
+as a two-robot wait-for cycle: r1 yielded J2 to r3 on priority, stopped at the line,
+and r3 then could not reach J2 because r1 was standing in its footprint.
+
+One robot diameter of separation is enough to keep the yielder clear of the node while
+still leaving it at the last passing point FR-5.10 asks for.
+
+Deliberately *not* written as ``NODE_OCCUPANCY_MM + COLLISION_DISTANCE_MM``, even
+though it must stay above NODE_OCCUPANCY_MM. Tying the two together means every
+widening of the sensor radius also pushes yielders further back, and yielders standing
+further back are themselves an obstruction: widening the radius to 1300 mm that way
+turned one collision into two stalls. The sensor radius answers "is the node ahead
+occupied"; this answers "where do I stop". They are bounded relative to each other,
+not equal."""
+
 ARBITRATION_LOOKAHEAD_MS = 4000
 """How far ahead of a junction a robot begins arbitrating.
 

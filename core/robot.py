@@ -1287,6 +1287,39 @@ class Robot:
         exit_node = edge.other_end(entry_node) if entry_node >= 0 else edge.v
         beyond = route[2] if len(route) >= 3 else -1
 
+        # A peer already *inside* the corridor, coming this way, is not a contender --
+        # it is a fact, and it outranks nothing because ranking does not apply to it.
+        #
+        # FR-5.10 puts the decision at the last passing point, and a contest there is
+        # only meaningful between robots that both still have a choice. A robot already
+        # committed to a single-lane aisle has none: it cannot reverse and it cannot be
+        # passed, so whatever its priority it must be allowed to finish traversing.
+        # Ranking it and winning does not clear the aisle, it only produces a head-on.
+        #
+        # Measured on bench3 seed 6: r2 outranked r3 and entered e4 from node 10 while
+        # r3 was 4524 mm of 6000 into it from node 11, crawling in YIELD. r3 had a live
+        # claim, r2 saw it, and r2 *won* -- they closed to 492 mm. The contest was
+        # working exactly as specified; the specification was being applied to a robot
+        # that had no move left to make.
+        if corridor != self.edge_id and entry_node >= 0:
+            occupant = self._opposing_occupant(exit_node, entry_node, now_ms)
+            if occupant is not None:
+                if self.state is not State.YIELD:
+                    if self.machine.fire_if_possible(Event.CONFLICT_LOST, now_ms):
+                        self.metrics.yields_lost += 1
+                        result.notes.append(
+                            f"corridor e{corridor} occupied by r{occupant.robot_id} "
+                            f"coming the other way; holding at the last passing point "
+                            f"(FR-5.10)"
+                        )
+                self.wait_cause = WaitCause(
+                    kind="corridor",
+                    blocker_id=occupant.robot_id,
+                    resource=f"e{corridor}",
+                    detail="occupant inside, opposing; not a ranking contest",
+                )
+                return 0
+
         # Which junctions still lie ahead. Once on the corridor the entry junction is
         # behind us and must be left out: asking about a node already passed compares
         # our position against robots still approaching it, and they legitimately
@@ -1359,6 +1392,20 @@ class Robot:
             detail=f"rival p{rival.priority} vs mine p{self.task_priority}",
         )
         return 0
+
+    def _opposing_occupant(self, from_node: int, to_node: int, now_ms: int):
+        """A live peer traversing ``from_node -> to_node`` right now, if any.
+
+        Read off the peer table rather than the reservation table on purpose. A
+        reservation says where a robot *intends* to be and is ranked against ours; this
+        asks where one *is*, which is not a matter of priority. Direction is what makes
+        it an opposition rather than a queue: a peer entering by the same end is
+        following traffic and is handled as headway (IF-2.4).
+        """
+        for peer in self.peers.live(now_ms):
+            if peer.is_on_edge(from_node, to_node):
+                return peer
+        return None
 
     def _corridor_ahead(self) -> int | None:
         """The single-lane corridor this robot is about to enter, if any.
@@ -1461,7 +1508,7 @@ class Robot:
             # Shed speed while there is room, then hold at the line. Crawling all the
             # way in would keep closing on the junction, and two robots converging on
             # one node from different aisles touch before either has entered it.
-            if self._distance_to_next_node_mm() <= config.JUNCTION_CLEARANCE_MM:
+            if self._distance_to_next_node_mm() <= config.YIELD_STANDOFF_MM:
                 self.wait_cause = WaitCause(
                     kind="junction",
                     blocker_id=decision.rival.robot_id if decision.rival else -1,
