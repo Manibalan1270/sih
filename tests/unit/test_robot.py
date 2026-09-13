@@ -391,3 +391,78 @@ class TestMotionCommand:
         assert MotionCommand(speed_mm_s=0, target_node=3).is_hold
         assert MotionCommand(speed_mm_s=800, target_node=None).is_hold
         assert not MotionCommand(speed_mm_s=800, target_node=3).is_hold
+
+
+class TestCharging:
+    """FR-6.7 / BR-4 / Appendix A's CHARGING state.
+
+    Nothing implemented the middle of Appendix A's charging cycle, so the state was
+    unreachable: a flat robot simply stopped for good. On a 24-task run every robot
+    reached 0%, refused new work, and the run stalled with seven tasks unallocated.
+    It presented as a coordination deadlock and was not one.
+    """
+
+    def test_a_flat_idle_robot_enters_charging(self, benchmark_map: Graph) -> None:
+        robot = make_robot(benchmark_map, home=0)
+        robot.battery_pct = config.BATTERY_RESERVE_PCT - 1
+        robot.step(0)
+        assert robot.state is State.CHARGING
+
+    def test_it_finishes_held_work_before_charging(self, benchmark_map: Graph) -> None:
+        """BR-4: an AMR below reserve does not accept new work but does complete work
+        already held. Diverting mid-task would abandon a delivery."""
+        robot = make_robot(benchmark_map, home=0)
+        robot.accept_task(make_task(pickup=1, drop=5), 0)
+        robot.battery_pct = config.BATTERY_RESERVE_PCT - 1
+        robot.step(0)
+        assert robot.state is not State.CHARGING
+        assert robot.queue.current is not None
+
+    def test_it_routes_to_a_charger(self, benchmark_map: Graph) -> None:
+        robot = make_robot(benchmark_map, home=2)
+        robot.battery_pct = 5
+        engine = Engine(graph=benchmark_map, robots=[robot], seed=1)
+        engine.run(
+            max_ms=600_000,
+            until=lambda e: robot.current_node in benchmark_map.chargers,
+        )
+        assert robot.current_node in benchmark_map.chargers
+
+    def test_it_charges_and_returns_to_service(self, benchmark_map: Graph) -> None:
+        robot = make_robot(benchmark_map, home=benchmark_map.chargers[0])
+        robot.battery_pct = 5
+        engine = Engine(graph=benchmark_map, robots=[robot], seed=1)
+        # The predicate must be the charge, not the state: the robot starts IDLE, and
+        # run() checks the condition before stepping, so "is IDLE" is true at t=0.
+        assert engine.run(
+            max_ms=600_000,
+            until=lambda e: robot.battery_pct >= config.BATTERY_RESUME_PCT,
+        )
+        engine.step()
+        assert robot.state is State.IDLE
+
+    def test_charging_accumulates_sub_percent_time(self, benchmark_map: Graph) -> None:
+        """Mirrors the drain side: a 20 ms tick is a fraction of a percent, and
+        discarding the remainder would mean never charging at all."""
+        robot = make_robot(benchmark_map, home=benchmark_map.chargers[0])
+        # Below reserve, or it never enters CHARGING in the first place.
+        robot.battery_pct = config.BATTERY_RESERVE_PCT - 1
+        engine = Engine(graph=benchmark_map, robots=[robot], seed=1)
+        engine.step()  # IDLE -> CHARGING
+        assert robot.state is State.CHARGING
+        before = robot.battery_pct
+        engine.run_ticks(config.BATTERY_CHARGE_MS_PER_PERCENT // config.MOTION_TICK_MS)
+        assert robot.battery_pct == before + 1
+
+    def test_a_full_charge_covers_a_realistic_run(self, benchmark_map: Graph) -> None:
+        """The SRS treats low battery as an exception (FE-6), not a routine event.
+
+        At 250 m per charge it was routine -- a robot flattened after about six tasks
+        and charging dominated every run. A benchmark run covers roughly 300 m per
+        robot, which must stay well inside one charge.
+        """
+        full_charge_mm = 100 * config.BATTERY_MM_PER_PERCENT
+        assert full_charge_mm >= 5 * 300_000, (
+            f"a full charge covers {full_charge_mm / 1000:.0f} m; a benchmark run is "
+            f"~300 m per robot, so charging would dominate rather than be an exception"
+        )

@@ -230,6 +230,19 @@ class Robot:
     auction layer drains this list and re-announces, so the task gets another
     chance from another robot -- or from this one once the blockage clears."""
 
+    _completion_echo: dict[int, int] = field(default_factory=dict)
+    """task_id -> INTENT periods left to keep re-announcing its completion.
+
+    See ``_emit_intent``: COMPLETE is one-shot, and a peer that missed it cannot tell
+    "done" from "still someone else's"."""
+
+    COMPLETION_ECHOES: int = 4
+    """Periods to repeat COMPLETE. Four covers 800 ms, which at 30% independent loss
+    leaves under a 1% chance of a peer missing every copy."""
+
+    _charge_accumulator_ms: int = 0
+    """Sub-percent charging time carried between ticks, mirroring the drain side."""
+
     _avoid_edges: set[int] = field(default_factory=set)
     """Edges this robot is temporarily avoiding after losing a junction contest
     (Appendix B's AVOID, second branch).
@@ -396,9 +409,11 @@ class Robot:
             self._step_replan(now_ms, result)
         elif self.state is State.AT_DROP:
             self._step_at_drop(now_ms, result)
-        # BIDDING, CHARGING and FAULT hold position. BIDDING is a 300 ms window
-        # during which the robot keeps its committed plan but starts nothing new;
-        # the auction itself is driven by messages, not by this loop.
+        elif self.state is State.CHARGING:
+            self._step_charging(now_ms, result)
+        # BIDDING and FAULT hold position. BIDDING is a 300 ms window during which
+        # the robot keeps its committed plan but starts nothing new; the auction
+        # itself is driven by messages, not by this loop.
 
         return result
 
@@ -450,6 +465,25 @@ class Robot:
         if now_ms - self._last_intent_ms < config.INTENT_PERIOD_MS:
             return
         self._last_intent_ms = now_ms
+
+        # Repeat COMPLETE for a few periods after finishing a task.
+        #
+        # COMPLETE is one-shot, and a peer that missed it has no way to learn the work
+        # is done: INTENT's held_task_id goes to -1 on completion, so silence about a
+        # task is indistinguishable from "still mine". A duplicate holder then delivers
+        # the same goods again -- measured at 30% loss as 10 completions for 9 tasks.
+        #
+        # This is opportunistic repetition, not the acknowledgement IF-4.5 forbids:
+        # nothing waits for a reply and correctness does not depend on any single frame
+        # arriving. It is the same discipline that makes RESERVE and INTENT loss
+        # tolerant.
+        for task_id in list(self._completion_echo):
+            remaining = self._completion_echo[task_id] - 1
+            result.outbox.append(Complete(task_id=task_id))
+            if remaining <= 0:
+                del self._completion_echo[task_id]
+            else:
+                self._completion_echo[task_id] = remaining
 
         horizon = self.remaining_route[1 : 1 + config.INTENT_HORIZON]
         etas: list[int] = []
@@ -787,7 +821,61 @@ class Robot:
             self.machine.fire(Event.QUEUE_HAS_WORK, now_ms)
             result.notes.append(f"queued work: {self.queue.current}")
             return
+
+        # FR-6.7 / BR-4 / Appendix A: below reserve, with held work complete, go and
+        # charge. Checked here rather than mid-task because BR-4 is explicit that an
+        # AMR below reserve finishes work it already holds.
+        if self.battery_pct < config.BATTERY_RESERVE_PCT:
+            if self.machine.fire_if_possible(Event.BATTERY_LOW, now_ms):
+                result.notes.append(
+                    f"battery {self.battery_pct}% below reserve; routing to a charger"
+                )
+            return
+
         self._vacate_junction(now_ms, result)
+
+    def _step_charging(self, now_ms: int, result: StepResult) -> None:
+        """Drive to a charger, then charge until fit to work again.
+
+        Appendix A has CHARGING entered when charge falls below reserve and held work
+        is complete, and left when charge is restored above threshold. Nothing
+        implemented the middle of that, so the state was unreachable and a flat robot
+        simply stopped for good: on a 24-task run every robot reached 0%, refused new
+        work, and the run stalled with tasks unallocated. It looked like a coordination
+        deadlock and was not one.
+        """
+        if self.battery_pct >= config.BATTERY_RESUME_PCT:
+            self.machine.fire(Event.CHARGED, now_ms)
+            result.notes.append(f"charged to {self.battery_pct}%; returning to service")
+            return
+
+        chargers = self.graph.chargers
+        if not chargers:
+            return  # nowhere to go; hold and hope for an operator (FR-6.9 RESTRICTED)
+
+        if self.current_node in chargers and self.next_node is None:
+            self._charge_accumulator_ms += config.MOTION_TICK_MS
+            gained, self._charge_accumulator_ms = divmod(
+                self._charge_accumulator_ms, config.BATTERY_CHARGE_MS_PER_PERCENT
+            )
+            if gained:
+                self.battery_pct = min(100, self.battery_pct + gained)
+            return
+
+        if self.next_node is None:
+            target = min(
+                chargers,
+                key=lambda node: (self.planner.travel_cost(self.current_node, node), node),
+            )
+            route = self.planner.route(self.current_node, target)
+            if route is None or len(route) < 2:
+                return
+            self._adopt_route(route)
+            result.notes.append(f"heading to charger {target}")
+
+        if self.next_node is not None:
+            speed = self._limit_for_clearance(config.NOMINAL_SPEED_MM_S, result)
+            result.command = MotionCommand(speed_mm_s=speed, target_node=self.next_node)
 
     def _vacate_junction(self, now_ms: int, result: StepResult) -> None:
         """Move off a junction when idle, and keep moving until clear.
@@ -1222,8 +1310,10 @@ class Robot:
             self.metrics.tasks_completed += 1
             self.completed_tasks.append(task)
             # Appendix A: AT_DROP broadcasts COMPLETE. Peers need it so a task
-            # they heard claimed is not left looking abandoned forever.
+            # they heard claimed is not left looking abandoned forever, and a
+            # duplicate holder needs it to stop doing finished work.
             result.outbox.append(Complete(task_id=task.task_id))
+            self._completion_echo[task.task_id] = self.COMPLETION_ECHOES
             result.notes.append(f"completed {task} in {task.completion_ms()} ms")
         self.task_priority = 0
         self.machine.fire(Event.TASK_REPORTED, now_ms)

@@ -120,11 +120,33 @@ All found while implementing; all should be corrected in v1.1.
 Phases 0-6 complete. `bench3` records **zero inter-robot collisions across 8
 seeds with every run finishing** -- the Phase 6 gate and the AC-2 target.
 
-**That result is scoped to bench3 as configured: 3 AMRs, 12 tasks, 4 waves.** It
-does not yet generalise. Measured at 6 AMRs with 36 tasks in a single wave,
-Configuration B records 5 collisions, and runs of both configurations sometimes
-fail to finish. So `visual30` and `scale100` would very likely collide today, and
-AC-2 is met only at the fleet size the problem statement mandates as a minimum.
+At 3 AMRs this holds at both densities tried -- 12 tasks over 4 waves and 24 tasks
+in a single wave -- with zero collisions and every run finishing. TC-3's single-lane
+ring also clears.
+
+Three defects behind earlier failures, all of which presented as coordination
+deadlocks and none of which were:
+
+1. **A junction-footprint blind spot.** A robot's claim on a junction vanished the
+   moment it passed the node, while it was still physically inside the junction.
+   Both 6-AMR collisions were this: one robot 264 mm past a node, another 940 mm
+   from it, 497 mm apart. Section 3.4.1 already calls `current_node` "the junction
+   most recently occupied *or departed*" -- the field exists for exactly this and was
+   being used only for position.
+2. **Flat batteries.** `BATTERY_MM_PER_PERCENT` gave 250 m per charge, an order of
+   magnitude too pessimistic, and nothing implemented Appendix A's charging cycle, so
+   `CHARGING` was unreachable. Robots hit 0%, refused work, and runs stalled with
+   tasks unallocated. FE-6 groups low battery with blocked aisles and peer failure --
+   an *exception* -- but at 250 m it was routine.
+3. **Chargers on task endpoints.** A robot that finished charging parked on a node
+   that was both charger and drop point, blocking the robot whose task was there.
+   Charging now lives on the staging bays, which are never task endpoints.
+
+A correction worth recording: the ring deadlock was diagnosed as a resource-ordering
+problem needing sequence-level reservation per [R8]. That was wrong. It was defects
+2 and 3, and the ring clears with no change to arbitration. The test had been marked
+`xfail(strict=True)`, which is the only reason the mistaken diagnosis was caught
+rather than acted on.
 
 Not yet met, and known:
 
@@ -136,7 +158,7 @@ Not yet met, and known:
   baseline is supposed to be handicapped by (Phase 11).
 - **TC-3's ring case deadlocks** -- see SRS defect 5 above. Junction arbitration
   and single-corridor arbitration are each correct and neither is sufficient.
-- **Safety and liveness are unverified above 3 AMRs** (5 collisions and
-  non-finishing runs at 6). This outranks the AC-3 margin: a makespan figure
-  measured on a fleet that sometimes collides is not evidence of anything.
+- **Safety and liveness are unverified above 3 AMRs** -- see above. This outranks
+  the AC-3 margin: a makespan figure measured on a fleet that sometimes collides
+  or stalls is not evidence of anything.
 - **`visual30` has never run**: Webots is not installed.

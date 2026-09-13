@@ -162,15 +162,34 @@ work, and routes to a charger."""
 BATTERY_RESUME_PCT = 80
 """Appendix A: charge above which a CHARGING AMR returns to IDLE."""
 
-BATTERY_MM_PER_PERCENT = 2500
-"""Millimetres travelled per percentage point of charge: 0.4%/m, so a full charge
-covers roughly 250 m.
+BATTERY_MM_PER_PERCENT = 20_000
+"""Millimetres travelled per percentage point of charge: 20 m, so a full charge
+covers about 2 km.
 
-Expressed as mm-per-percent rather than as a Q8 percent-per-mm weight on purpose.
-At a 20 ms tick a robot covers 16 mm, and 0.0004 percent per mm is 0.1 in Q8 --
-which rounds to zero, so the battery would never discharge at all. Accumulating
-distance and spending a whole percent each time the threshold is crossed keeps the
-arithmetic integer and exact at every tick rate."""
+This was 2,500 mm (250 m per charge) and that was wrong by an order of magnitude,
+with consequences. The SRS treats low battery as an *exception* -- FE-6 groups it
+with blocked aisles and peer failure -- but at 250 m a robot flattens after about
+six tasks, so charging became the dominant dynamic rather than an exception. On a
+24-task run every robot reached 0%, stopped accepting work, and the run stalled with
+seven tasks unallocated. It presented as a coordination deadlock and was not one.
+
+2 km is modest but defensible for a small AMR on an ESP32-class platform, and it
+puts a benchmark run's ~300 m of travel at roughly 15% of charge -- enough that the
+battery terms in the bid still matter, not enough to dominate.
+
+Expressed as mm-per-percent rather than as a Q8 percent-per-mm weight on purpose. At
+a 20 ms tick a robot covers 16 mm, and a fractional percent-per-mm rounds to zero in
+Q8, so the battery would never discharge at all. Accumulating distance and spending a
+whole percent each time the threshold is crossed keeps the arithmetic integer and
+exact at every tick rate."""
+
+BATTERY_CHARGE_MS_PER_PERCENT = 400
+"""Time at a charger to regain one percentage point, so a full charge takes ~40 s.
+
+A simulation parameter, not an SRS one: no requirement fixes a charge rate, and
+OI-5 puts docking mechanics out of scope. Chosen fast enough that charging is a
+recoverable excursion rather than the end of a robot's run, and slow enough that
+FR-6.7's routing to a charger has a visible cost."""
 
 # ---------------------------------------------------------------------------
 # Localization and confidence (FE-7)

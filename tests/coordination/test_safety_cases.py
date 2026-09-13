@@ -369,29 +369,20 @@ class TestTC3CyclicConflict:
         assert unique_winner([]) is None
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "OPEN: a ring of distinct single-lane corridors still deadlocks, and "
-            "Appendix C's proof does not reach it. The proof concerns one conflict set "
-            "under one total order and shows a unique maximum; a cycle of separate "
-            "corridors defeats that, because each robot is the rightful winner of the "
-            "segment it wants while blocked by a different robot holding the next. "
-            "Junction-level and single-corridor arbitration are both correct and "
-            "neither is sufficient. The fix is sequence-level reservation -- hold the "
-            "whole contended chain before entering any of it, per [R8] -- which is a "
-            "design step, not a patch. A local 'do not enter unless your exit is clear' "
-            "rule was tried and is too blunt: it also refuses entry behind a peer about "
-            "to leave, and cost bench3 three of six runs. Marked strict so it fails "
-            "loudly the moment it starts passing."
-        ),
-    )
     def test_three_robots_on_a_single_lane_ring_all_clear(self) -> None:
         """The executable counterpart of Appendix C, on the map built for it.
 
         The loop map is three single-lane junction-to-junction edges in a ring with a
         spur at each junction, so robots sent round it must contend for every segment.
-        If a cyclic wait were possible, this is where it would form -- and it does.
+        If a cyclic wait were possible, this is where it would form.
+
+        This was xfail for a while, on the belief that a ring of distinct corridors
+        needed sequence-level reservation because each robot is the rightful winner of
+        the segment it wants while blocked by another holding the next. That diagnosis
+        was wrong. The ring was not deadlocking on resource ordering at all: robots
+        were running flat -- nothing implemented Appendix A's charging cycle -- and
+        finished robots were parking on charger nodes that were also task endpoints.
+        Fixing those two made the ring clear with no change to arbitration.
         """
         ring = scenarios.Scenario(
             name="loop3",

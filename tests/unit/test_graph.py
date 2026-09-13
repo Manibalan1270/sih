@@ -185,8 +185,11 @@ class TestQueries:
             benchmark_map.edge(4).other_end(0)
 
     def test_chargers_and_junctions_are_reported(self, benchmark_map: Graph) -> None:
-        assert set(benchmark_map.chargers) == {0, 7}
+        # Charging lives at the staging bays, not at the depots: the depots are task
+        # endpoints, and a robot that finished charging on one blocked the robot whose
+        # task was there.
         assert set(benchmark_map.parking_nodes) == {12, 13, 14}
+        assert set(benchmark_map.chargers) == set(benchmark_map.parking_nodes)
         # Depots and parking bays are spurs, so they are not arbitration points.
         spurs = {0, 7, 12, 13, 14}
         assert set(benchmark_map.junctions) == set(benchmark_map.nodes) - spurs

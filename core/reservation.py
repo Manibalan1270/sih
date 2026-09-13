@@ -426,10 +426,27 @@ class ReservationTable:
         return not self.conflicts(junction, window, exclude_robot=exclude_robot)
 
     def latest_conflict_end(
-        self, junction: int, window: Window, *, exclude_robot: int
+        self,
+        junction: int,
+        window: Window,
+        *,
+        exclude_robot: int,
+        from_node: int = -1,
+        to_node: int = -1,
     ) -> int | None:
-        """When the last conflicting window ends. Appendix B's AVOID input."""
-        conflicting = self.conflicts(junction, window, exclude_robot=exclude_robot)
+        """When the last conflicting window ends. Appendix B's AVOID input.
+
+        Takes the same direction filter as ``conflicts`` and must: computing the shift
+        over a set that includes following traffic would delay a robot behind one it
+        was never in conflict with.
+        """
+        conflicting = self.conflicts(
+            junction,
+            window,
+            exclude_robot=exclude_robot,
+            from_node=from_node,
+            to_node=to_node,
+        )
         if not conflicting:
             return None
         return max(held.window.end_ms for held in conflicting)

@@ -1,6 +1,6 @@
 {
  "name": "benchmark_map",
- "description": "Benchmark warehouse (FR-10.8). Two depot blocks joined by three routes: a short SINGLE-LANE choke corridor C_WEST-C_EAST (20.0 m end to end) and two longer bypasses over the top and bottom of the floor (36.4 m each, 1.82x the choke). Any left-to-right task therefore prefers the choke on nominal costs, which is what forces the path overlap the success criteria require. The two bypasses are deliberately equal in length so route diversity has somewhere symmetric to go once pheromone builds. Three parking spurs (P_A/P_B/P_C) hang off low-traffic junctions and are not task endpoints: an idle AMR withdraws to one so it is not standing on a junction other robots need. Without dedicated bays every idle robot converges on the nearest charger, which is a dead-end spur holding one, and the queue behind it blocks the aisle -- including for robots whose task is at that very node.",
+ "description": "Benchmark warehouse (FR-10.8). Two depot blocks joined by three routes: a short SINGLE-LANE choke corridor C_WEST-C_EAST (20.0 m end to end) and two longer bypasses over the top and bottom of the floor (36.4 m each, 1.82x the choke). Any left-to-right task therefore prefers the choke on nominal costs, which is what forces the path overlap the success criteria require. The two bypasses are deliberately equal in length so route diversity has somewhere symmetric to go once pheromone builds. Three parking spurs (P_A/P_B/P_C) hang off low-traffic junctions and are not task endpoints: an idle AMR withdraws to one so it is not standing on a junction other robots need. Without dedicated bays every idle robot converges on the nearest charger, which is a dead-end spur holding one, and the queue behind it blocks the aisle -- including for robots whose task is at that very node. Charging is at the parking bays, not at the depots. The depots are pickup and drop nodes, and a robot that finished charging on one stood on a task endpoint and blocked the robot whose task was there.",
  "nodes": [
   {
    "id": 0,
@@ -9,7 +9,6 @@
    "y": 12000,
    "junction": false,
    "marker": true,
-   "charger": true,
    "zone": 0
   },
   {
@@ -61,7 +60,6 @@
    "y": 12000,
    "junction": false,
    "marker": true,
-   "charger": true,
    "zone": 1
   },
   {
@@ -100,7 +98,8 @@
    "junction": false,
    "marker": true,
    "parking": true,
-   "zone": 0
+   "zone": 0,
+   "charger": true
   },
   {
    "id": 13,
@@ -110,7 +109,8 @@
    "junction": false,
    "marker": true,
    "parking": true,
-   "zone": 0
+   "zone": 0,
+   "charger": true
   },
   {
    "id": 14,
@@ -120,7 +120,8 @@
    "junction": false,
    "marker": true,
    "parking": true,
-   "zone": 1
+   "zone": 1,
+   "charger": true
   }
  ],
  "edges": [

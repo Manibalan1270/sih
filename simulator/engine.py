@@ -214,17 +214,35 @@ class Engine:
         stops them meeting there.
         """
         occupants: dict[tuple[int, int], list[Robot]] = {}
-        at_node: dict[int, list[Robot]] = {}
+        # node -> [(robot, departing)]. ``departing`` distinguishes a robot on its way
+        # out of the node from one on its way in, which decides who gives way.
+        at_node: dict[int, list[tuple[Robot, bool]]] = {}
         for robot in self.active_robots:
             if robot.edge_id is not None and robot.next_node is not None:
                 occupants.setdefault((robot.edge_id, robot.next_node), []).append(robot)
-            # A robot barely onto an edge is still standing on the node behind it, so
-            # it must be visible to anything approaching that node. Without this a
-            # robot stopped at the head of an edge is invisible until the approaching
-            # robot has joined the same edge -- by which point they are coincident,
-            # each reads zero clearance, and both hold for the other forever.
-            if robot.edge_id is None or robot.progress_mm <= config.ENTRY_COMMIT_MM:
-                at_node.setdefault(robot.current_node, []).append(robot)
+
+            if robot.edge_id is None:
+                at_node.setdefault(robot.current_node, []).append((robot, False))
+                continue
+
+            # Occupying the node behind it, on the way out. The clearance used is the
+            # junction footprint, not a few millimetres: a robot 250 mm past a node is
+            # still inside it. Section 3.4.1 says as much -- current_node is "the
+            # junction most recently occupied *or departed*".
+            #
+            # This is the case that collided at 6 robots: one robot 264 mm past a node
+            # and another 940 mm from it, 497 mm apart. The departing robot's claim had
+            # already vanished from its INTENT, and a 150 mm test saw neither.
+            if robot.progress_mm <= config.JUNCTION_CLEARANCE_MM:
+                at_node.setdefault(robot.current_node, []).append((robot, True))
+
+            # Occupying the node ahead, on the way in -- so two robots converging on
+            # one node from different aisles can see each other. Junction arbitration
+            # separates them in time; this is the geometric backstop for when its
+            # timing is slightly out.
+            to_node = robot.graph.length_mm(robot.edge_id) - robot.progress_mm
+            if robot.next_node is not None and to_node <= config.JUNCTION_CLEARANCE_MM:
+                at_node.setdefault(robot.next_node, []).append((robot, False))
 
         for robot in self.active_robots:
             robot.forward_clearance_mm = 1 << 30
@@ -248,8 +266,18 @@ class Engine:
                     nearest = gap
 
             to_node = robot.graph.length_mm(robot.edge_id) - robot.progress_mm
-            for other in at_node.get(robot.next_node, ()):
+            for other, departing in at_node.get(robot.next_node, ()):
                 if other.robot_id == robot.robot_id:
+                    continue
+                # A robot on its way *out* of the node is an obstacle unconditionally:
+                # it is physically in the way and it will clear on its own, so waiting
+                # for it always terminates.
+                #
+                # A robot on its way *in* is a peer converging on the same node. Both
+                # treating the other as an obstacle would have both hold for ever, so
+                # the same total order used everywhere else decides: the lower id goes
+                # first, and the higher gives way.
+                if not departing and robot.robot_id < other.robot_id:
                     continue
                 if to_node < nearest:
                     nearest = to_node

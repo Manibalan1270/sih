@@ -86,9 +86,10 @@ def build_grid(
     for row in range(rows):
         for col in range(cols):
             zone = (row // rows_per_band) * col_bands + (col // cols_per_band)
-            # Chargers at the four corners of the floor: reachable from
-            # anywhere, and out of the main cross-aisle traffic.
-            is_corner = col in (0, cols - 1) and row in (0, rows - 1)
+            # No chargers on the floor itself. Charging happens at the staging bays
+            # below, which are deliberately not task endpoints: a robot that finished
+            # charging on a pickup node stood on a task endpoint and blocked the robot
+            # whose task was there.
             nodes.append(
                 {
                     "id": node_id(col, row),
@@ -96,7 +97,6 @@ def build_grid(
                     "x": col * COL_SPACING_MM,
                     "y": row * ROW_SPACING_MM,
                     "marker": True,
-                    "charger": is_corner,
                     "zone": zone,
                 }
             )
@@ -160,7 +160,7 @@ def build_grid(
                 "junction": False,
                 "marker": True,
                 "parking": True,
-                "charger": index % 8 == 0,
+                "charger": True,
                 "zone": anchor_node["zone"],
             }
         )
