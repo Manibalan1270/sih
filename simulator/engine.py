@@ -30,6 +30,7 @@ from core.graph import Graph
 from core.robot import Robot
 from core.state_machine import State
 from simulator.collision_detector import CollisionDetector, CollisionEvent, Pose
+from simulator.deadlock import StallReport, StallWatcher
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,15 @@ class Engine:
     log_notes: bool = True
     """Whether to record each robot's decision notes. Useful for a 3-robot demo,
     switched off for scale100 where it would dominate memory."""
+
+    stall_watcher: StallWatcher = field(default_factory=StallWatcher)
+    """Watches for a motionless fleet and explains it (see simulator/deadlock.py).
+
+    Observational only: it never influences a decision, so it cannot affect
+    reproducibility or bring state onto the arbitration path."""
+
+    stall_report: StallReport | None = None
+    """The first stall diagnosed in this run, if any."""
 
     rng: random.Random = field(init=False)
     _by_id: dict[int, Robot] = field(init=False, repr=False)
@@ -186,6 +196,16 @@ class Engine:
             if self.mesh is not None and result.outbox:
                 self.mesh.send_all(robot.robot_id, result.outbox, self.now_ms)
 
+        self.stall_watcher.observe(self.active_robots, self.now_ms)
+        if self.stall_report is None and self.stall_watcher.is_stalled(
+            self.active_robots, self.now_ms
+        ):
+            self.stall_report = self.stall_watcher.report(
+                self.active_robots, self.now_ms
+            )
+            for line in self.stall_report.describe().splitlines():
+                self.log("stall", None, line.strip())
+
         collisions = self.collision_detector.check(self.now_ms, self.poses())
         for collision in collisions:
             self.log(
@@ -246,9 +266,11 @@ class Engine:
 
         for robot in self.active_robots:
             robot.forward_clearance_mm = 1 << 30
+            robot.forward_blocker_id = -1
             if robot.edge_id is None or robot.next_node is None:
                 continue
             nearest = 1 << 30
+            blocker = -1
 
             same_lane = occupants.get((robot.edge_id, robot.next_node), ())
             for other in same_lane:
@@ -261,9 +283,9 @@ class Engine:
                     # order the rest of the system uses: the lower id goes first.
                     if robot.robot_id < other.robot_id:
                         continue
-                    nearest = 0
+                    nearest, blocker = 0, other.robot_id
                 elif 0 < gap < nearest:
-                    nearest = gap
+                    nearest, blocker = gap, other.robot_id
 
             to_node = robot.graph.length_mm(robot.edge_id) - robot.progress_mm
             for other, departing in at_node.get(robot.next_node, ()):
@@ -280,9 +302,10 @@ class Engine:
                 if not departing and robot.robot_id < other.robot_id:
                     continue
                 if to_node < nearest:
-                    nearest = to_node
+                    nearest, blocker = to_node, other.robot_id
 
             robot.forward_clearance_mm = nearest
+            robot.forward_blocker_id = blocker
 
     def _apply_motion(self, robot: Robot, result) -> None:
         command = result.command
@@ -327,6 +350,7 @@ class Engine:
         *,
         max_ms: int,
         until: Callable[["Engine"], bool] | None = None,
+        stop_on_stall: bool = False,
     ) -> bool:
         """Run until ``until`` is satisfied or ``max_ms`` elapses.
 
@@ -334,12 +358,23 @@ class Engine:
         rather than optional: a deadlocked fleet would otherwise spin forever, and
         the point of TC-3 is that deadlock cannot happen -- a test that hangs
         instead of failing proves nothing.
+
+        ``stop_on_stall`` returns as soon as a wait-for cycle is diagnosed rather
+        than grinding on to the limit. Off by default so it cannot change any
+        existing result; worth switching on when investigating, where it turns a
+        multi-minute wait into a few seconds and leaves ``stall_report`` set.
         """
         limit_tick = self.tick + max(1, max_ms // self.tick_ms)
         while self.tick < limit_tick:
             if until is not None and until(self):
                 return True
             self.step()
+            if (
+                stop_on_stall
+                and self.stall_report is not None
+                and self.stall_report.is_deadlocked
+            ):
+                return False
         return until(self) if until is not None else True
 
     def run_ticks(self, count: int) -> None:

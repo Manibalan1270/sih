@@ -120,6 +120,32 @@ Derived from declaration order rather than written out, so a state added to
 Appendix A cannot be forgotten here and silently encode as another state."""
 
 
+@dataclass(frozen=True, slots=True)
+class WaitCause:
+    """Why a robot is not moving, and who it is waiting on.
+
+    Recorded so a stalled fleet can be *diagnosed* rather than inferred. Reading a
+    freeze off a dump of positions and states was tried repeatedly and misdiagnosed
+    it twice: the position tells you a robot has stopped, not which other robot it
+    stopped for, and without that the wait-for cycle has to be guessed.
+    """
+
+    kind: str
+    """``headway``, ``junction``, ``corridor`` or ``confidence``."""
+
+    blocker_id: int
+    """The robot being waited on, or -1 where the cause is not another robot."""
+
+    resource: str
+    """What is being waited for: a junction, a corridor, or the space ahead."""
+
+    detail: str = ""
+
+    def __str__(self) -> str:
+        who = f"r{self.blocker_id}" if self.blocker_id >= 0 else "nobody"
+        return f"{self.kind} on {self.resource}, waiting on {who}"
+
+
 @dataclass
 class RobotMetrics:
     """Per-robot counters the benchmark reads (FR-10.2, FR-10.3).
@@ -194,6 +220,17 @@ class Robot:
     arbiter: Arbiter | None = None
     """Junction arbitration (FE-5). None disables it, which is how Configuration A
     runs the same robot object with no coordination at all (FR-10.5)."""
+
+    wait_cause: WaitCause | None = None
+    """Why this robot held position on the last tick, or None if it did not.
+
+    Cleared at the top of every ``step`` so it always describes now, never a stale
+    reason from an earlier tick."""
+
+    forward_blocker_id: int = -1
+    """Whose footprint the forward sensor is reading, from whatever drives the robot.
+    A sensor gives a distance; the simulator also knows the identity, and the
+    identity is what makes a stall diagnosable."""
 
     forward_clearance_mm: int = 1 << 30
     """Distance to the nearest obstacle directly ahead, from the forward sensor
@@ -374,6 +411,7 @@ class Robot:
         reviewer can check this against the SRS table line by line.
         """
         result = StepResult(command=MotionCommand.hold())
+        self.wait_cause = None
 
         # FR-5.11: claims lapse on their own, with no release message. Done before
         # anything reads the table, so a decision is never taken against a window
@@ -1016,6 +1054,12 @@ class Robot:
                 result.notes.append(
                     f"holding: {self.forward_clearance_mm} mm clearance ahead"
                 )
+            self.wait_cause = WaitCause(
+                kind="headway",
+                blocker_id=self.forward_blocker_id,
+                resource=f"space ahead on e{self.edge_id}",
+                detail=f"{self.forward_clearance_mm} mm clearance",
+            )
             return 0
         return min(speed, config.YIELD_SPEED_MM_S)
 
@@ -1135,6 +1179,12 @@ class Robot:
                     f"corridor e{corridor} held by r{rival.robot_id} "
                     f"(p{rival.priority}); waiting at the last passing point (FR-5.10)"
                 )
+        self.wait_cause = WaitCause(
+            kind="corridor",
+            blocker_id=rival.robot_id,
+            resource=f"e{corridor}",
+            detail=f"rival p{rival.priority} vs mine p{self.task_priority}",
+        )
         return 0
 
     def _corridor_ahead(self) -> int | None:
@@ -1239,8 +1289,22 @@ class Robot:
             # way in would keep closing on the junction, and two robots converging on
             # one node from different aisles touch before either has entered it.
             if self._distance_to_next_node_mm() <= config.JUNCTION_CLEARANCE_MM:
+                self.wait_cause = WaitCause(
+                    kind="junction",
+                    blocker_id=decision.rival.robot_id if decision.rival else -1,
+                    resource=f"J{junction}",
+                    detail="holding at the line after shedding speed",
+                )
                 return 0
             return config.YIELD_SPEED_MM_S
+
+        self.wait_cause = WaitCause(
+            kind="confidence" if decision.outcome is Outcome.BLOCKED_LOW_CONFIDENCE
+            else "junction",
+            blocker_id=decision.rival.robot_id if decision.rival else -1,
+            resource=f"J{junction}",
+            detail=decision.outcome.value,
+        )
 
         # YIELD_HOLD or BLOCKED_LOW_CONFIDENCE: stop short of the junction. Not the
         # emergency braking FR-5.6 forbids -- that rules out hard braking as the

@@ -1,0 +1,289 @@
+"""Deadlock diagnosis.
+
+The detector's job is to tell a *cycle* from a *chain*, because they mean opposite
+things: a cycle cannot resolve however long you wait, a chain clears on its own. A
+detector that conflated them would be worse than none, since it would report every
+queue as a deadlock and train the reader to ignore it.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from core.graph import Graph
+from core.robot import Robot, WaitCause
+from core.state_machine import State
+from simulator.deadlock import (
+    StallWatcher,
+    WaitEdge,
+    diagnose,
+    find_cycles,
+    wait_edges,
+)
+from simulator.engine import Engine
+from tests.conftest import ReferencePlanner
+
+
+def robot_at(graph: Graph, robot_id: int, node: int) -> Robot:
+    return Robot(
+        robot_id=robot_id, graph=graph, planner=ReferencePlanner(graph), home_node=node
+    )
+
+
+def waiting(graph: Graph, robot_id: int, node: int, *, on: int, kind: str = "corridor"):
+    robot = robot_at(graph, robot_id, node)
+    robot.wait_cause = WaitCause(kind=kind, blocker_id=on, resource="e4")
+    robot.machine.state = State.YIELD
+    return robot
+
+
+def edge(waiter: int, blocker: int, kind: str = "corridor") -> WaitEdge:
+    return WaitEdge(waiter=waiter, blocker=blocker, kind=kind, resource="e4")
+
+
+class TestCycleDetection:
+    def test_a_two_robot_loop_is_a_cycle(self) -> None:
+        cycles = find_cycles([edge(1, 2), edge(2, 1)])
+        assert len(cycles) == 1
+        assert set(cycles[0].robots) == {1, 2}
+
+    def test_a_three_robot_loop_is_a_cycle(self) -> None:
+        """The shape actually observed at 6 AMRs."""
+        cycles = find_cycles([edge(1, 3), edge(3, 5), edge(5, 1)])
+        assert len(cycles) == 1
+        assert set(cycles[0].robots) == {1, 3, 5}
+
+    def test_a_chain_is_not_a_cycle(self) -> None:
+        """A waits on B waits on C, and C is free. This clears on its own, and
+        calling it a deadlock would make the detector cry wolf on every queue."""
+        assert find_cycles([edge(1, 2), edge(2, 3)]) == []
+
+    def test_a_chain_that_ends_in_a_cycle_reports_only_the_cycle(self) -> None:
+        """The robots in the loop are the ones that can never move; the ones queued
+        behind it are merely delayed, and naming them would obscure the cause."""
+        cycles = find_cycles([edge(9, 1), edge(1, 2), edge(2, 1)])
+        assert len(cycles) == 1
+        assert set(cycles[0].robots) == {1, 2}
+
+    def test_two_independent_cycles_are_both_found(self) -> None:
+        cycles = find_cycles([edge(1, 2), edge(2, 1), edge(5, 6), edge(6, 5)])
+        assert len(cycles) == 2
+
+    def test_no_edges_means_no_cycle(self) -> None:
+        assert find_cycles([]) == []
+
+    def test_a_self_loop_cannot_be_built(self) -> None:
+        """A robot waiting on itself would be a bookkeeping error, not a deadlock."""
+        graph = Graph.load("maps/benchmark_map.json")
+        robot = waiting(graph, 1, 2, on=1)
+        assert wait_edges([robot]) == []
+
+
+class TestWaitGraph:
+    def test_edges_come_from_recorded_causes(self, benchmark_map: Graph) -> None:
+        robots = [
+            waiting(benchmark_map, 1, 2, on=3),
+            waiting(benchmark_map, 3, 4, on=1),
+        ]
+        edges = wait_edges(robots)
+        assert {(e.waiter, e.blocker) for e in edges} == {(1, 3), (3, 1)}
+
+    def test_a_robot_with_no_cause_contributes_nothing(self, benchmark_map: Graph) -> None:
+        assert wait_edges([robot_at(benchmark_map, 1, 2)]) == []
+
+    def test_a_wait_on_something_that_is_not_a_robot_is_dropped(
+        self, benchmark_map: Graph
+    ) -> None:
+        """Low position confidence stops a robot, but no peer can release it, so it
+        cannot be part of a cycle."""
+        robot = robot_at(benchmark_map, 1, 2)
+        robot.wait_cause = WaitCause(kind="confidence", blocker_id=-1, resource="J10")
+        assert wait_edges([robot]) == []
+
+    def test_a_wait_on_an_absent_robot_is_dropped(self, benchmark_map: Graph) -> None:
+        """A killed peer cannot be waited on: its claims expire (FR-5.11)."""
+        robot = waiting(benchmark_map, 1, 2, on=99)
+        assert wait_edges([robot]) == []
+
+    def test_edges_are_ordered_by_waiter(self, benchmark_map: Graph) -> None:
+        """So two reports of the same stall read identically."""
+        robots = [
+            waiting(benchmark_map, 5, 2, on=1),
+            waiting(benchmark_map, 1, 4, on=5),
+        ]
+        assert [e.waiter for e in wait_edges(robots)] == [1, 5]
+
+
+class TestReport:
+    def test_a_cycle_is_named_a_deadlock(self, benchmark_map: Graph) -> None:
+        robots = [
+            waiting(benchmark_map, 1, 2, on=3),
+            waiting(benchmark_map, 3, 4, on=1),
+        ]
+        report = diagnose(robots, at_ms=1000, moved_recently=set())
+        assert report.is_deadlocked
+        text = report.describe()
+        assert "deadlock" in text
+        assert "r1" in text and "r3" in text
+
+    def test_a_chain_is_described_as_clearing_itself(self, benchmark_map: Graph) -> None:
+        robots = [
+            waiting(benchmark_map, 1, 2, on=3),
+            waiting(benchmark_map, 3, 4, on=5),
+        ]
+        report = diagnose(robots, at_ms=1000, moved_recently=set())
+        assert not report.is_deadlocked
+        assert "no cycle" in report.describe()
+
+    def test_a_robot_stopped_with_no_reason_is_flagged(self, benchmark_map: Graph) -> None:
+        """A different and usually worse defect: some path holds position without
+        going through any declared wait point."""
+        mute = robot_at(benchmark_map, 7, 2)
+        mute.machine.state = State.MOVING
+        report = diagnose([mute], at_ms=1000, moved_recently=set())
+        assert report.unexplained == (7,)
+        assert "no recorded cause" in report.describe()
+
+    def test_the_mixed_cycle_shape_is_reported_in_full(self, benchmark_map: Graph) -> None:
+        """The observed cycle mixed two corridor yields with one headway block.
+
+        That mix is the whole point of recording the kind: the loop closes through a
+        *geometric* link, not a right-of-way decision, so no change to arbitration
+        can break it. Reporting only the robots would hide that.
+        """
+        robots = [
+            waiting(benchmark_map, 1, 2, on=3, kind="corridor"),
+            waiting(benchmark_map, 3, 4, on=5, kind="headway"),
+            waiting(benchmark_map, 5, 6, on=1, kind="corridor"),
+        ]
+        report = diagnose(robots, at_ms=1000, moved_recently=set())
+        assert report.is_deadlocked
+        assert report.cycles[0].kinds == ("corridor", "headway")
+
+
+class TestStallWatcher:
+    def test_a_moving_fleet_is_not_stalled(self, benchmark_map: Graph) -> None:
+        from core.task import Task
+
+        robot = robot_at(benchmark_map, 1, 0)
+        robot.accept_task(
+            Task(task_id=1, pickup=1, drop=5, priority=10, created_at_ms=0), 0
+        )
+        engine = Engine(graph=benchmark_map, robots=[robot])
+        engine.run_ticks(200)
+        assert engine.stall_report is None
+
+    def test_an_idle_fleet_is_not_a_stall(self, benchmark_map: Graph) -> None:
+        """A fleet with no work is motionless and perfectly healthy. Reporting that
+        as a deadlock would fire on every completed run."""
+        robot = robot_at(benchmark_map, 1, benchmark_map.parking_nodes[0])
+        engine = Engine(graph=benchmark_map, robots=[robot])
+        engine.run_ticks(1000)
+        assert engine.stall_report is None
+
+    def test_movement_resets_the_clock(self, benchmark_map: Graph) -> None:
+        watcher = StallWatcher(window_ms=1000)
+        robot = robot_at(benchmark_map, 1, 0)
+        watcher.observe([robot], 0)
+        robot.metrics.distance_mm += 100
+        watcher.observe([robot], 5000)
+        assert 1 in watcher.moved_recently(5000)
+        assert 1 not in watcher.moved_recently(9000)
+
+    def test_the_window_is_longer_than_a_legitimate_hold(self) -> None:
+        """A robot waiting out a junction conflict pauses for a safety margin, and a
+        corridor traverse takes a few seconds. The window must exceed both or the
+        detector reports normal operation as a deadlock."""
+        from core import config
+
+        assert StallWatcher().window_ms > config.MARGIN_DEGRADED_MS
+        assert StallWatcher().window_ms > config.JUNCTION_OCCUPANCY_MS
+
+    def test_a_motionless_working_fleet_reads_as_stalled(self, benchmark_map: Graph) -> None:
+        """Checked through the watcher rather than by stepping the engine: step()
+        clears each robot's wait cause and re-derives it, which is correct -- the
+        cause must describe now, not an earlier tick -- but it means a manually
+        planted cause cannot survive a step."""
+        robots = [
+            waiting(benchmark_map, 1, 2, on=2),
+            waiting(benchmark_map, 2, 4, on=1),
+        ]
+        watcher = StallWatcher(window_ms=100)
+        watcher.observe(robots, 0)
+        assert watcher.is_stalled(robots, 5000)
+        report = watcher.report(robots, 5000)
+        assert report.is_deadlocked
+
+
+@pytest.mark.slow
+class TestAgainstTheRealStall:
+    """End to end, on the fleet size that actually deadlocks."""
+
+    def test_the_six_robot_stall_is_diagnosed_as_a_cycle(self) -> None:
+        from core import scenarios
+        from simulator.scenario import AuctionAllocator, build
+
+        sim = build(
+            scenarios.get("bench3"), seed=0, allocator=AuctionAllocator(),
+            robots=6, task_count=36, waves=1,
+        )
+        for _ in range(60_000):
+            sim.step()
+            report = sim.engine.stall_report
+            if report is not None and report.is_deadlocked:
+                break
+            if sim.is_finished:
+                break
+
+        report = sim.engine.stall_report
+        assert report is not None, "the 6-AMR stall was not detected at all"
+        assert report.is_deadlocked, (
+            "expected a wait-for cycle, got: " + report.describe()
+        )
+        assert sim.engine.events_of("stall")
+
+    def test_the_cycle_closes_through_a_geometric_link(self) -> None:
+        """The finding that explains why arbitration fixes kept failing.
+
+        The observed loop is two corridor yields and one *headway* block: one robot
+        is not yielding to anyone, it is physically stuck behind another. A cycle that
+        closes through geometry rather than right of way cannot be broken by changing
+        who wins a junction, which is what three attempts tried to do.
+        """
+        from core import scenarios
+        from simulator.scenario import AuctionAllocator, build
+
+        sim = build(
+            scenarios.get("bench3"), seed=0, allocator=AuctionAllocator(),
+            robots=6, task_count=36, waves=1,
+        )
+        for _ in range(60_000):
+            sim.step()
+            if sim.engine.stall_report is not None:
+                break
+            if sim.is_finished:
+                break
+
+        report = sim.engine.stall_report
+        assert report is not None and report.cycles
+        assert "headway" in report.cycles[0].kinds, (
+            "expected a geometric link in the cycle, got "
+            + str(report.cycles[0].kinds) + ": " + report.describe()
+        )
+
+
+class TestDiagnosticsAreObservationalOnly:
+    def test_instrumentation_does_not_change_a_run(self, benchmark_map: Graph) -> None:
+        """NFR-4.4 and CON-7: a diagnostic that could alter behaviour would be worse
+        than none. Two runs of one seed must stay identical to the millisecond."""
+        from core import scenarios
+        from simulator.scenario import AuctionAllocator, build
+
+        traces = []
+        for _ in range(2):
+            sim = build(scenarios.get("bench3"), seed=4, allocator=AuctionAllocator())
+            sim.run(max_ms=600_000)
+            traces.append(
+                (sim.makespan_ms, [str(e) for e in sim.engine.events if e.kind != "stall"])
+            )
+        assert traces[0] == traces[1]
