@@ -358,3 +358,86 @@ class TestReporting:
         assert "empty" in table.summary()
         table.record(claim())
         assert "J5" in table.summary()
+
+
+class TestQueueHeads:
+    """One contender per approach, for ranking only.
+
+    A robot queued behind another cannot take a resource next, so ranking it ranks a
+    robot that cannot act. That is how higher-order deadlock forms: every move is
+    individually legal and the ordering makes the deadlock inevitable.
+    """
+
+    def test_a_queue_collapses_to_its_nearest_member(self) -> None:
+        from core.reservation import queue_heads
+
+        near = claim(robot_id=2, start=10_000, end=10_700, from_node=4)
+        far = claim(robot_id=3, start=12_000, end=12_700, from_node=4)
+        assert queue_heads([far, near]) == (near,)
+
+    def test_distinct_approaches_are_both_kept(self) -> None:
+        """Two robots coming from different directions are genuinely both rivals."""
+        from core.reservation import queue_heads
+
+        west = claim(robot_id=2, start=10_000, end=10_700, from_node=4)
+        east = claim(robot_id=3, start=10_100, end=10_800, from_node=9)
+        assert len(queue_heads([west, east])) == 2
+
+    def test_the_head_is_chosen_deterministically_on_a_tie(self) -> None:
+        """FR-5.8: two robots reading one table must reach the same answer, and equal
+        window starts would otherwise be resolved by dict order."""
+        from core.reservation import queue_heads
+
+        a = claim(robot_id=7, start=10_000, end=10_700, from_node=4)
+        b = claim(robot_id=3, start=10_000, end=10_700, from_node=4)
+        assert queue_heads([a, b]) == queue_heads([b, a])
+        assert queue_heads([a, b])[0].robot_id == 3
+
+    def test_the_lower_priority_head_still_wins_over_a_queued_higher_one(self) -> None:
+        """The point of the whole rule, stated as the outcome it produces.
+
+        bench3 seed 28: r1 yielded the choke corridor to r3 on priority 100 while r3 was
+        stuck behind r2 on the approach and could not reach the corridor at all. r2, at
+        the mouth, yielded to r1. Three-robot cycle, nobody wrong.
+        """
+        from core.arbitration import outranks
+        from core.reservation import queue_heads
+
+        at_the_mouth = claim(robot_id=2, start=10_000, end=10_700, from_node=4)
+        queued_behind = claim(robot_id=3, start=14_000, end=14_700, from_node=4)
+        object.__setattr__(queued_behind, "priority", 100)
+
+        heads = queue_heads([at_the_mouth, queued_behind])
+        rival = max(heads, key=lambda held: held.ranking_key())
+        assert rival.robot_id == 2, "the queued robot is still being ranked"
+        assert outranks(10, 1, rival.priority, rival.robot_id), (
+            "r1 should now win the corridor against the robot actually at the mouth"
+        )
+
+
+class TestRankingCollapseIsNotAppliedToTiming:
+    def test_the_avoid_shift_still_sees_the_whole_queue(self) -> None:
+        """Appendix B's AVOID asks how long until the resource is free, which is the
+        opposite question from who has right of way: the whole queue has to pass.
+
+        Collapsing here computed the shift from the head alone and placed the robot
+        inside a follower's window -- 10,700 ms when the queue ran to 12,000.
+        """
+        table = ReservationTable()
+        table.record(claim(robot_id=2, start=10_000, end=10_700, from_node=1))
+        table.record(claim(robot_id=3, start=10_400, end=12_000, from_node=1))
+        assert (
+            table.latest_conflict_end(
+                5, Window(10_500, 11_200), exclude_robot=9, from_node=6
+            )
+            == 12_000
+        )
+
+    def test_conflicts_returns_every_overlapping_claim(self) -> None:
+        table = ReservationTable()
+        table.record(claim(robot_id=2, start=10_000, end=10_700, from_node=1))
+        table.record(claim(robot_id=3, start=10_400, end=12_000, from_node=1))
+        found = table.conflicts(
+            5, Window(10_500, 11_200), exclude_robot=9, from_node=6
+        )
+        assert {held.robot_id for held in found} == {2, 3}

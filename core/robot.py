@@ -45,7 +45,7 @@ from core.arbitration import Arbiter, Outcome, crossing_window, outranks
 from core.auction import NO_WINNER, Auctioneer
 from core.graph import Graph
 from core.peers import PeerTable
-from core.reservation import ReservationTable, Window
+from core.reservation import ReservationTable, Window, queue_heads
 from core.state_machine import Event, State, StateMachine
 from core.task import Leg, Task, TaskQueue, TaskState
 
@@ -966,10 +966,19 @@ class Robot:
         run never finished.
 
         Real warehouses solve this with staging areas, and the map already has the
-        nodes for it -- depots and chargers are marked non-junction precisely because
-        nothing crosses there. So an idle robot withdraws to the nearest one.
+        nodes for it -- the parking bays. So an idle robot withdraws to the nearest one.
+
+        The test is "am I on a bay", not "am I on a junction", and the difference is a
+        second deadlock. A depot is not a junction -- nothing crosses it -- so an idle
+        robot standing on one used to be left alone as harmless. It is not harmless: a
+        depot is where *tasks* begin and end, so a robot resting there blocks the very
+        work it is waiting for. Measured at 6 AMRs: two robots finished their last task
+        and idled on node 0, and the 36th task could never be delivered to node 0. The
+        run reached 35 of 36 with no collisions and then sat still for an hour of
+        simulated time. Only a bay is somewhere standing still obstructs nobody, which
+        is what a bay is for.
         """
-        if not self.graph.node(self.current_node).is_junction:
+        if self.current_node in self.graph.parking_nodes:
             return  # already parked somewhere harmless
 
         # The test is "nothing left to follow", not "no route". A completed route
@@ -985,7 +994,7 @@ class Robot:
                 return
             self._adopt_route(route)
             result.notes.append(
-                f"idle on junction {self.current_node}; withdrawing to {parking}"
+                f"idle on {self.current_node}, which is not a bay; withdrawing to {parking}"
             )
 
         if self.next_node is None:
@@ -1070,10 +1079,12 @@ class Robot:
             speed = config.YIELD_SPEED_MM_S
 
         speed = self._follow_traffic_ahead(now_ms, speed, result)
+        if self.arbiter is not None and self._hold_outside_corner(result):
+            speed = 0
         speed = self._limit_for_clearance(speed, result)
         self._last_speed_mm_s = speed
         if self.arbiter is not None:
-            self._hold_junction_while_clearing(now_ms, result)
+            self._hold_junction_while_in_corner(now_ms, result)
         result.command = MotionCommand(speed_mm_s=speed, target_node=self.next_node)
 
     def _follow_traffic_ahead(self, now_ms: int, speed: int, result: StepResult) -> int:
@@ -1216,6 +1227,56 @@ class Robot:
         result.notes.append(
             f"r{blocker} is parked on node {self.next_node}; taking another edge "
             f"instead of queueing (FR-5.6)"
+        )
+        return True
+
+    def _hold_outside_corner(self, result: StepResult) -> bool:
+        """Never come to rest inside a junction's corner. Hold at the line instead.
+
+        The rule is standard in lane-annotated multi-agent navigation: lanes are made to
+        end a deliberate gap short of an intersection so that a robot stopped at the end
+        of one does not interfere with robots moving through the intersection, and a
+        robot that cannot cross is directed to stop *outside* the conflict region rather
+        than partway into it (Google/Intrinsic, US 11,709,502 B2, "Roadmap annotation for
+        deadlock-free multi-agent navigation"). Entry is conditional on being able to
+        leave.
+
+        We had the gap -- YIELD_STANDOFF_MM is 200 mm outside JUNCTION_FOOTPRINT_MM --
+        but only arbitration used it. The reactive clearance limiter did not: it stops
+        dead wherever the sensor reading happens to fall, which on seed 19 was 800 mm
+        from node 2, inside the corner. The geometry then works against the robot,
+        because a peer *departing* that junction closes on a robot stopped there as it
+        leaves -- separation falls to 100 mm at 700 mm past the node. So a robot that
+        halts in a corner is not merely obstructing, it is being driven into.
+
+        Deciding here rather than at the exit is what keeps this from being the blunt
+        "do not enter unless your exit is clear" rule that was tried and reverted: that
+        one refused entry behind a peer about to leave and cost three of six runs. This
+        asks a narrower question -- is passage already in doubt, right now, at the last
+        point where stopping is still safe -- and once inside the corner it never holds,
+        because a committed robot must clear rather than freeze.
+        """
+        if self.next_node is None or self.edge_id is None:
+            return False
+        if not self.graph.node(self.next_node).is_junction:
+            return False
+        to_node = self._distance_to_next_node_mm()
+        if to_node <= config.JUNCTION_FOOTPRINT_MM:
+            return False  # committed: inside the corner, clearing it is the only safe act
+        if to_node > config.YIELD_STANDOFF_MM:
+            return False  # not at the line yet; approach it normally
+        clearance = self.forward_clearance_mm
+        if clearance < 0 or clearance > config.FOLLOWING_DISTANCE_MM:
+            return False  # passage is not in doubt
+        self.wait_cause = WaitCause(
+            kind="corner",
+            blocker_id=self.forward_blocker_id,
+            resource=f"J{self.next_node}",
+            detail=f"{clearance} mm ahead; holding outside the corner",
+        )
+        result.notes.append(
+            f"holding {to_node} mm short of J{self.next_node}: {clearance} mm clearance "
+            f"ahead, so the corner cannot be crossed without stopping in it"
         )
         return True
 
@@ -1364,7 +1425,11 @@ class Robot:
                 result.notes.append(f"corridor e{corridor} clear; entering")
             return self._limit_for_clearance(config.NOMINAL_SPEED_MM_S, result)
 
-        rival = max(conflicts, key=lambda held: held.ranking_key())
+        # Collapsed to one contender per approach before ranking: a robot queued behind
+        # another cannot take the corridor next, so ranking it ranks a robot that cannot
+        # act. Done here rather than inside the table because the same set, uncollapsed,
+        # is what AVOID needs for timing.
+        rival = max(queue_heads(conflicts), key=lambda held: held.ranking_key())
         if outranks(self.task_priority, self.robot_id, rival.priority, rival.robot_id):
             if self.state is State.YIELD:
                 self.machine.fire_if_possible(Event.CONFLICT_CLEARED, now_ms)
@@ -1436,6 +1501,11 @@ class Robot:
             return self._single_lane_edge_between(remaining[1], remaining[2])
         return None
 
+    def _exit_after_junction(self) -> int:
+        """The node beyond the junction ahead, or -1 if the route ends there."""
+        route = self.remaining_route
+        return route[2] if len(route) >= 3 else -1
+
     def _time_to_cover_mm(self, distance_mm: int) -> int:
         """How long ``distance_mm`` takes at the speed this robot is actually making.
 
@@ -1448,8 +1518,23 @@ class Robot:
             speed = max(config.YIELD_SPEED_MM_S, self._last_speed_mm_s)
         return distance_mm * 1000 // speed
 
-    def _hold_junction_while_clearing(self, now_ms: int, result: StepResult) -> None:
-        """Keep claiming the junction just crossed until clear of its corner.
+    def _hold_junction_while_in_corner(self, now_ms: int, result: StepResult) -> None:
+        """Claim a junction for as long as this robot is physically inside its corner.
+
+        Both halves, and the approach half is the one that collided. A robot's ordinary
+        claim on a junction is *implied* from the ETA in its INTENT, so it describes when
+        the robot expects to arrive -- and a robot halted 800 mm short of a junction
+        declares a late arrival (``_emit_intent`` floors ETAs at the yield speed so they
+        stay finite). Its claim therefore sits in the future while its body sits in the
+        corner now, and peers see the junction as free. On seed 19 r3 stood 800 mm from
+        node 2 for seconds; r2 saw nothing there, claimed it, crossed, and swept r3's
+        corner on the way out. Neither robot did anything wrong with the ranking -- one
+        of them was invisible.
+
+        Declaring occupancy from *now* is what makes a stationary robot a fact rather
+        than a forecast. The window is bounded even at a standstill for the same reason
+        the ETAs are.
+
 
         Arbitration only ever looks at ``next_node``, so the moment a robot passes a
         junction it stops claiming it -- while still physically inside it. That is the
@@ -1469,17 +1554,33 @@ class Robot:
         for this node, and ``ReservationTable.record`` carries that forward onto an
         explicit claim. So following traffic is still recognised as following.
         """
-        if self.edge_id is None or self.progress_mm >= config.JUNCTION_FOOTPRINT_MM:
+        if self.edge_id is None:
             return
-        if not self.graph.node(self.current_node).is_junction:
+
+        # Which junction's corner this robot is standing in, and how much of it is left
+        # to leave. Departing counts from progress along the new edge; approaching counts
+        # from the distance still to run plus the far half it has yet to cross.
+        junction, remaining_mm = -1, 0
+        if (
+            self.progress_mm < config.JUNCTION_FOOTPRINT_MM
+            and self.graph.node(self.current_node).is_junction
+        ):
+            junction = self.current_node
+            remaining_mm = config.JUNCTION_FOOTPRINT_MM - self.progress_mm
+        elif self.next_node is not None and self.graph.node(self.next_node).is_junction:
+            to_node = self._distance_to_next_node_mm()
+            if to_node <= config.JUNCTION_FOOTPRINT_MM:
+                junction = self.next_node
+                remaining_mm = to_node + config.JUNCTION_FOOTPRINT_MM
+        if junction < 0:
             return
+
         if now_ms - self._last_clearing_reserve_ms < config.INTENT_PERIOD_MS:
             return
         self._last_clearing_reserve_ms = now_ms
-        remaining_mm = config.JUNCTION_FOOTPRINT_MM - self.progress_mm
         result.outbox.append(
             Reserve(
-                junction_id=self.current_node,
+                junction_id=junction,
                 window_start_ms=now_ms,
                 window_end_ms=now_ms + self._time_to_cover_mm(remaining_mm),
                 priority=self.task_priority,
@@ -1508,34 +1609,72 @@ class Robot:
         # Sized from the corner footprint at the speed actually being travelled, not
         # from Appendix E's fixed 700 ms -- see crossing_window and SRS defect 10. The
         # claim has to cover the whole time this robot is inside the corner, which
-        # starts JUNCTION_FOOTPRINT_MM before the node and ends the same distance past
-        # it. Re-derived every tick, so a robot that slows down widens its own claim
-        # and one that speeds up narrows it again.
-        # Sized at *nominal* speed deliberately, not at the speed being made. Sizing it
-        # from the actual speed is self-reinforcing and deadlocks: a robot that yields
-        # drops to a third of nominal, which triples its own claim, which conflicts with
-        # more peers, which makes it yield harder. Measured as three fresh stalls over
-        # 20 seeds. The claim here says "how long the corner takes to cross", a property
-        # of the junction; how long *this* robot will actually take when crawling is
-        # handled by _hold_junction_while_clearing, which renews as it goes.
-        # Widened *backwards* from arrival only, and deliberately not forwards.
+        # Sized from the corner footprint, and widened *backwards* from arrival only.
         #
-        # Backwards is what was missing: the robot is inside the corner from
+        # Backwards is what was missing: a robot is inside the corner from
         # JUNCTION_FOOTPRINT_MM out, so a claim beginning at arrival says nothing about
-        # the stretch where it can actually collide. Adding it fixed the corner
-        # collision at 3 AMRs outright.
+        # the stretch where it can actually collide.
         #
-        # Forwards was tried and costs more than it buys. Extending the claim past
-        # arrival to cover the departure is the physically complete statement -- the
-        # corner is occupied from entry to exit -- but it holds every junction for three
-        # times as long, and over 20 seeds it turned one failure back into three. The
-        # departure is covered instead by _hold_junction_while_clearing, which claims it
-        # only while a robot is really there rather than reserving it in advance.
+        # At nominal speed, not the speed being made. Sizing it from the actual speed is
+        # self-reinforcing and deadlocks -- a yielding robot drops to a third of nominal,
+        # which triples its own claim, conflicts with more peers, and makes it yield
+        # harder (three fresh stalls over 20 seeds). This says how long the corner takes
+        # to cross, a property of the junction; how long *this* robot will take when
+        # crawling is handled by _hold_junction_while_in_corner, which renews as it goes.
+        #
+        # Not widened forwards. Covering the departure in advance is the physically
+        # complete statement and holds every junction three times as long, which turned
+        # one failure back into three.
         corner_ms = config.JUNCTION_FOOTPRINT_MM * 1000 // config.NOMINAL_SPEED_MM_S
         window = crossing_window(
             arrival_ms=arrival_ms,
             approach_ms=min(corner_ms, arrival_ms - now_ms),
         )
+        # A peer physically *in* the corner outranks nothing, because ranking does not
+        # apply to it. This is the junction counterpart of the corridor rule above, and
+        # it exists for the same reason: the Appendix C total order is only meaningful
+        # between robots that both still have a choice. A robot standing in a corner has
+        # none -- it cannot step sideways out of a junction -- so winning the contest
+        # against it does not clear the corner, it drives through it.
+        #
+        # Measured on seed 19: r3 stood 800 mm from node 2, r2 tied on priority 10 and
+        # won on the lower id exactly as specified, crossed, and swept r3 on the way out.
+        #
+        # Occupancy is told from forecast by the window itself, with nothing added to the
+        # wire: a claim whose window has already begun is a robot saying where it *is*,
+        # while one that begins later is saying where it will be. Only the latter is a
+        # bid. _hold_junction_while_in_corner is what makes the former get sent.
+        occupied_now = [
+            held
+            for held in self.reservations.conflicts(
+                junction,
+                window,
+                exclude_robot=self.robot_id,
+                from_node=self.current_node,
+                to_node=self._exit_after_junction(),
+            )
+            if held.window.start_ms <= now_ms
+        ]
+        committed = self._distance_to_next_node_mm() <= config.JUNCTION_FOOTPRINT_MM
+        if occupied_now and not committed:
+            blocker = occupied_now[0]
+            if self.state is not State.YIELD:
+                if self.machine.fire_if_possible(Event.CONFLICT_LOST, now_ms):
+                    self.metrics.yields_lost += 1
+                    result.notes.append(
+                        f"J{junction} physically occupied by r{blocker.robot_id}; "
+                        f"holding outside the corner rather than ranking it"
+                    )
+            self.wait_cause = WaitCause(
+                kind="corner",
+                blocker_id=blocker.robot_id,
+                resource=f"J{junction}",
+                detail="occupant inside the corner; not a ranking contest",
+            )
+            if self._distance_to_next_node_mm() <= config.YIELD_STANDOFF_MM:
+                return 0
+            return config.YIELD_SPEED_MM_S
+
         remaining = self.remaining_route
         decision = self.arbiter.arbitrate(
             junction=junction,

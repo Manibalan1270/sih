@@ -168,9 +168,27 @@ All found while implementing; all should be corrected in v1.1.
 
 ## Status
 
-Phases 0-7b complete. `bench3` at 3 AMRs is clean over **8 seeds** and fails
-**1 of 20**: seed 19, which both stalls and records one collision. The junction-corner
-fix (defect 10) took this from 3 of 20.
+Phases 0-7b complete. `bench3` at 3 AMRs records **zero collisions across 30 seeds**,
+with 29 of 30 completing. The remaining one (seed 28) is a three-robot wait-for cycle at
+the choke corridor, not a collision.
+
+That sequence went 3 failures in 20 seeds -> 1 -> 0 collisions in 30, and the fixes that
+got there all turned out to be one idea applied in four places: **a robot that has no
+move left is a fact, not a contender.** The Appendix C total order is only meaningful
+between robots that both still have a choice, and ranking one that does not have a choice
+produces either a collision or a cycle. The four places were a robot already inside a
+single-lane corridor (defect 11), a robot standing in a junction's corner (defect 10), a
+robot idling on a node that tasks need (defect 7), and a robot queued behind another on
+the approach to a contended resource (defect 12).
+
+The approach follows the lane/conflict-region treatment in Google/Intrinsic's
+US 11,709,502 B2, *Roadmap annotation for deadlock-free multi-agent navigation*, where
+lanes deliberately end a gap short of an intersection so a robot stopped at the end of
+one cannot interfere with robots crossing, and robots that cannot cross are held
+*outside* the conflict region rather than partway into it. The bounded-lookahead framing
+-- each robot needing to examine only a few states ahead rather than the whole
+configuration space -- follows the distributed higher-order-deadlock literature, and maps
+onto INTENT's existing three-node horizon.
 
 That distinction matters and the earlier wording here hid it. The Phase 6 gate was
 read as met because the first 8 seeds pass, and the same 8 seeds were used to clear

@@ -216,17 +216,31 @@ class TestStallWatcher:
 
 
 @pytest.mark.slow
-class TestAgainstTheRealStall:
-    """End to end, on the fleet size that actually deadlocks."""
+class TestAgainstTheRealFleet:
+    """End to end, on the fleet size that used to deadlock.
 
-    def test_the_six_robot_stall_is_diagnosed_as_a_cycle(self) -> None:
+    These tests previously asserted the opposite: that 6 AMRs *did* form a wait-for
+    cycle, and that the cycle closed through a geometric headway link rather than a
+    right-of-way decision. Both were true and both are now fixed -- the geometric link
+    was the junction corner (SRS defect 10), and a robot standing in a corner is now a
+    fact that peers hold outside rather than a contender they can outrank.
+
+    They are kept pointing at the same run rather than deleted, because a regression here
+    is exactly what would be easy to miss: the detector's synthetic tests above would
+    still pass while the fleet quietly started deadlocking again.
+    """
+
+    def build_six(self, seed: int = 0):
         from core import scenarios
         from simulator.scenario import AuctionAllocator, build
 
-        sim = build(
-            scenarios.get("bench3"), seed=0, allocator=AuctionAllocator(),
+        return build(
+            scenarios.get("bench3"), seed=seed, allocator=AuctionAllocator(),
             robots=6, task_count=36, waves=1,
         )
+
+    def test_six_robots_no_longer_form_a_wait_for_cycle(self) -> None:
+        sim = self.build_six()
         for _ in range(60_000):
             sim.step()
             report = sim.engine.stall_report
@@ -236,39 +250,30 @@ class TestAgainstTheRealStall:
                 break
 
         report = sim.engine.stall_report
-        assert report is not None, "the 6-AMR stall was not detected at all"
-        assert report.is_deadlocked, (
-            "expected a wait-for cycle, got: " + report.describe()
-        )
-        assert sim.engine.events_of("stall")
+        if report is not None:
+            assert not report.is_deadlocked, (
+                "the 6-AMR wait-for cycle is back: " + report.describe()
+            )
 
-    def test_the_cycle_closes_through_a_geometric_link(self) -> None:
-        """The finding that explains why arbitration fixes kept failing.
-
-        The observed loop is two corridor yields and one *headway* block: one robot
-        is not yielding to anyone, it is physically stuck behind another. A cycle that
-        closes through geometry rather than right of way cannot be broken by changing
-        who wins a junction, which is what three attempts tried to do.
+    def test_six_robots_do_the_work_without_colliding(self) -> None:
+        """Collisions are the part that must hold. Completion at this fleet size is
+        limited by the map rather than by coordination: benchmark_map has three parking
+        bays, so six robots cannot all stand somewhere harmless, and a fleet with nowhere
+        to idle is the capacity constraint that deadlock-free lane routing assumes away
+        (every lane keeping room for one more agent). bench3 is a three-robot scenario;
+        this exercises the safety layer above its intended density, not its throughput.
         """
-        from core import scenarios
-        from simulator.scenario import AuctionAllocator, build
-
-        sim = build(
-            scenarios.get("bench3"), seed=0, allocator=AuctionAllocator(),
-            robots=6, task_count=36, waves=1,
-        )
+        sim = self.build_six()
         for _ in range(60_000):
             sim.step()
-            if sim.engine.stall_report is not None:
-                break
             if sim.is_finished:
                 break
-
-        report = sim.engine.stall_report
-        assert report is not None and report.cycles
-        assert "headway" in report.cycles[0].kinds, (
-            "expected a geometric link in the cycle, got "
-            + str(report.cycles[0].kinds) + ": " + report.describe()
+        assert not sim.engine.coordination_failures, (
+            f"{len(sim.engine.coordination_failures)} collisions at 6 AMRs"
+        )
+        assert len(sim.completed) >= 20, (
+            f"only {len(sim.completed)} of {len(sim.task_set)} tasks done; throughput "
+            f"has collapsed even allowing for the bay shortage"
         )
 
 

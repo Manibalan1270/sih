@@ -341,7 +341,7 @@ class ReservationTable:
         holders = self.corridors.get(edge_id)
         if not holders:
             return ()
-        return tuple(
+        opposing = [
             holders[robot_id]
             for robot_id in sorted(holders)
             if robot_id != exclude_robot
@@ -350,7 +350,8 @@ class ReservationTable:
                 from_node >= 0
                 and holders[robot_id].from_node == from_node
             )
-        )
+        ]
+        return queue_heads(opposing)
 
     def corridor_holders(self, edge_id: int) -> tuple[Reservation, ...]:
         holders = self.corridors.get(edge_id)
@@ -505,6 +506,43 @@ class ReservationTable:
             for held in self.holders(junction):
                 lines.append(f"  {held}")
         return "\n".join(lines)
+
+
+def queue_heads(claims: list[Reservation]) -> tuple[Reservation, ...]:
+    """One contender per approach: the robot at the front of each queue.
+
+    Robots arriving from the same node are in one lane, one behind the other, and only
+    the leading one can take the resource next. The others are queued behind it and will
+    have their turn -- they are not rivals for *this* decision, and ranking them as if
+    they were ranks a robot that cannot act.
+
+    That produces higher-order deadlock: a cycle in which every move is individually
+    legal but the ordering makes the deadlock inevitable. Measured on bench3 seed 28 as a
+    three-robot cycle at the choke corridor -- r1 yielded e4 to r3 because r3 carried
+    priority 100, while r3 was stuck 1200 mm behind r2 on the approach and could not
+    reach e4 at all; r2, at the mouth, yielded to r1. Collapsing each approach to its
+    head leaves r1 ranked against r2 alone, which it wins, and the cycle cannot form.
+
+    The head is the earliest window, with the robot id breaking ties so that two robots
+    reading the same table reach the same answer (FR-5.8).
+
+    **For ranking only, never for timing.** Choosing a rival is a question about who has
+    right of way, and a robot queued behind another is not a candidate. Deciding how long
+    to wait is the opposite question and needs every window, followers included, because
+    the whole queue has to pass before the resource is free. Applying this to
+    ``conflicts`` broke exactly that: Appendix B's AVOID shift was computed from the head
+    alone and placed the robot inside a follower's window, 10,700 ms instead of 12,000.
+    ``conflicts`` therefore returns everything and callers that rank collapse afterwards.
+    """
+    heads: dict[int, Reservation] = {}
+    for claim in claims:
+        current = heads.get(claim.from_node)
+        if current is None or (claim.window.start_ms, claim.robot_id) < (
+            current.window.start_ms,
+            current.robot_id,
+        ):
+            heads[claim.from_node] = claim
+    return tuple(heads[node] for node in sorted(heads))
 
 
 def _is_following(held: Reservation, from_node: int, to_node: int) -> bool:
