@@ -100,6 +100,9 @@ class Graph:
     )
     _pair_index: dict[tuple[int, int], int] = field(default_factory=dict, repr=False)
     _blocked: set[int] = field(default_factory=set, repr=False)
+    _axis_aligned: bool = field(default=False, repr=False)
+    """Whether every edge runs purely horizontally or vertically. Determines which
+    geometric lower bound ``straight_line_ms`` may use; see its docstring."""
 
     # -- construction --------------------------------------------------------
 
@@ -121,6 +124,11 @@ class Graph:
         self._adjacency = {
             node: tuple(sorted(neighbours)) for node, neighbours in adjacency.items()
         }
+        self._axis_aligned = all(
+            self.nodes[edge.u].x_mm == self.nodes[edge.v].x_mm
+            or self.nodes[edge.u].y_mm == self.nodes[edge.v].y_mm
+            for edge in self.edges.values()
+        )
 
     # -- queries -------------------------------------------------------------
 
@@ -158,14 +166,32 @@ class Graph:
         return self.edges[edge_id].nominal_cost_ms
 
     def straight_line_ms(self, a: int, b: int) -> int:
-        """Admissible A* heuristic: straight-line time at cruise speed.
+        """Admissible A* heuristic: lower bound on travel time between two nodes.
 
-        Admissible because ``validate`` guarantees no edge costs less than its
-        own straight-line time, so no path between two nodes can beat the
-        straight line between them (FR-3.2).
+        Admissible because ``validate`` guarantees no edge costs less than its own
+        straight-line time, so no path can beat the geometric bound between its
+        endpoints (FR-3.2).
+
+        Which bound is used depends on the map, and the difference is large.
+        Euclidean distance is the only safe bound for arbitrary geometry, but on a
+        rectilinear warehouse grid it is a *weak* bound -- a robot cannot travel
+        the diagonal, it must go along the aisles -- and a weak heuristic
+        degenerates A* into Dijkstra. Measured corner to corner on the 288-node
+        grid, Euclidean expanded 287 nodes: the search was doing no better than an
+        unguided one.
+
+        When every edge is axis-parallel, Manhattan distance is also a valid lower
+        bound, and a far tighter one. Each edge then contributes its whole length
+        to exactly one axis, so the summed length of any path is at least
+        ``|dx| + |dy|`` between its endpoints. ``_axis_aligned`` records whether
+        that holds, so mixed maps with diagonal aisles keep the Euclidean bound and
+        stay correct.
         """
         na, nb = self.node(a), self.node(b)
-        distance_mm = math.dist((na.x_mm, na.y_mm), (nb.x_mm, nb.y_mm))
+        gap_x, gap_y = abs(na.x_mm - nb.x_mm), abs(na.y_mm - nb.y_mm)
+        distance_mm = (
+            gap_x + gap_y if self._axis_aligned else math.dist((0, 0), (gap_x, gap_y))
+        )
         return int(distance_mm * 1000) // config.NOMINAL_SPEED_MM_S
 
     def length_mm(self, edge_id: int) -> int:
