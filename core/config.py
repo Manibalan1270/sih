@@ -1,0 +1,281 @@
+"""Frozen configuration constants for ROBOTON.
+
+Every value here traces to the SRS (ROBOTON-SRS-001 v1.0). Appendix E is the
+authoritative table for the tunable set; section 5.1 for the latency budgets.
+
+Two rules govern this module:
+
+1. Everything is an ``int``. CON-6 (limited ESP32 floating point) and FR-3.8
+   forbid floating-point arithmetic on any path executed inside the 5 ms
+   arbitration deadline. Weights that are conceptually fractional are stored as
+   Q8 fixed point -- the real value multiplied by 256 -- and applied with
+   ``q8_mul``.
+
+2. Nothing here is read at run time from a file or the environment. FR-10.10
+   requires the tunable constants to ship as fixed constants with no run-time
+   search. The offline search that sets them rewrites *this file*.
+"""
+
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Fixed-point helpers (CON-6, FR-3.8)
+# ---------------------------------------------------------------------------
+
+Q8_ONE = 256
+"""Scale factor for Q8 fixed point: a stored value of 256 means 1.0."""
+
+
+def q8(value: float) -> int:
+    """Convert a real weight to Q8 fixed point. Author-time use only.
+
+    Takes a float, so it must never be called on the arbitration path. It
+    exists so the constants below can be written readably.
+    """
+    return round(value * Q8_ONE)
+
+
+def q8_mul(weight_q8: int, x: int) -> int:
+    """Multiply ``x`` by a Q8 weight using integer arithmetic only.
+
+    Truncates toward negative infinity, which keeps the result monotonic in
+    ``x`` and so keeps bid and cost ordering stable. FR-5.8 requires identical
+    inputs to yield identical decisions, and a rounding mode that varied with
+    sign would not.
+    """
+    return (weight_q8 * x) >> 8
+
+
+# ---------------------------------------------------------------------------
+# Protocol periods (Appendix E)
+# ---------------------------------------------------------------------------
+
+INTENT_PERIOD_MS = 200
+"""FR-1.1 / NFR-1.4: INTENT broadcast period (5 Hz)."""
+
+INTENT_TOLERANCE_MS = 20
+"""FR-1.1: permitted jitter on the INTENT period."""
+
+INTENT_HORIZON = 3
+"""Section 3.4.1: future junctions declared in INTENT (next_nodes[3])."""
+
+PEER_TIMEOUT_MS = 1500
+"""FR-1.5 / NFR-1.11: silence after which a peer is declared lost."""
+
+AUCTION_WINDOW_MS = 300
+"""FR-4.4 / NFR-1.8: sealed bid window, measured from the ANNOUNCE stamp."""
+
+CLAIM_TIMEOUT_MS = 2000
+"""FR-4.12: winner must CLAIM within this, else second place re-announces."""
+
+DIGEST_PERIOD_MS = 10_000
+"""FR-2.5 / NFR-1.6: traffic-model gossip period (0.1 Hz)."""
+
+PHEROMONE_DECAY_MS = 2000
+"""FR-2.3: pheromone evaporation period."""
+
+BEACON_PERIOD_MS = 5000
+"""FR-7.4: fleet clock beacon period."""
+
+BEACON_STALE_MS = 60_000
+"""FR-5.13: beacon silence past which the safety margin is widened."""
+
+TELEMETRY_PERIOD_MS = 1000
+"""NFR-1.7 / FR-8.3: telemetry relay period (1 Hz)."""
+
+MOTION_TICK_MS = 20
+"""NFR-1.5: motion control period (50 Hz). Also the simulator's fixed dt, so
+every protocol period above is an exact whole number of ticks."""
+
+# ---------------------------------------------------------------------------
+# Safety margins (Appendix E, FE-5)
+# ---------------------------------------------------------------------------
+
+MARGIN_MS = 800
+"""FR-5.3: two reservation windows on one junction conflict when separated by
+less than this."""
+
+MARGIN_DEGRADED_MS = 1500
+"""FR-5.13 / FR-7.6: widened margin once the clock beacon is stale."""
+
+# ---------------------------------------------------------------------------
+# Latency budgets (section 5.1) -- asserted by tests, not enforced at run time
+# ---------------------------------------------------------------------------
+
+ARBITRATION_DEADLINE_MS = 5
+"""FR-5.7 / NFR-1.1: arbitration decision latency."""
+
+PLAN_DEADLINE_MS = 50
+"""FR-3.5 / NFR-1.2: initial route planning latency."""
+
+REPAIR_DEADLINE_MS = 50
+"""FR-3.6 / NFR-1.3: D* Lite route repair latency."""
+
+# ---------------------------------------------------------------------------
+# Task allocation (FE-4, Appendix E, BR-3)
+# ---------------------------------------------------------------------------
+
+QUEUE_CAP = 2
+"""FR-4.9 / BR-3 / ASM-18: maximum queued tasks per AMR. This bound is what
+keeps insertion-cost enumeration from growing combinatorially."""
+
+# ---- provisional tunable weights ------------------------------------------
+# OI-2: the five weights below are provisional. FR-10.10 requires them to be
+# fixed by offline search in simulation against the makespan objective, then
+# frozen before the graded run. Until benchmark/runner.py has produced that
+# search, treat every value here as unvalidated.
+
+ALPHA_Q8 = q8(12.0)
+"""alpha -- pheromone weight in edge cost, ms of cost per pheromone unit. A
+saturated edge (pheromone 255) adds ~3060 ms, comparable to one nominal aisle
+traversal, so congestion can divert a route but not dominate it."""
+
+EPSILON_MS = 300
+"""epsilon -- idle-preference bid reduction (FR-4.3, BR-5, TC-14). Expressed
+directly in ms of bid, so it needs no fixed-point scaling."""
+
+DELTA_MS = 500
+"""delta -- reassignment stability margin (FR-4.10, BR-6, TC-15). A claimed
+task changes hands only if a challenger beats the holder by more than this."""
+
+W1_Q8 = q8(40.0)
+"""w1 -- battery penalty weight, ms of bid per percentage point below the
+penalty knee (FR-4.3)."""
+
+W2_Q8 = q8(0.25)
+"""w2 -- task aging weight, ms of bid reduction per ms waited (FR-4.11, BR-2).
+At 0.25 a task waiting 20 s has its bid cut by 5000 ms, enough to outbid a
+convenient rival, which is how the anti-starvation obligation is discharged."""
+
+BATTERY_PENALTY_KNEE_PCT = 50
+"""State of charge below which the battery penalty starts to bite. Above the
+knee the penalty is zero, so a healthy fleet bids on insertion cost alone."""
+
+# ---------------------------------------------------------------------------
+# Battery (FE-6, BR-4)
+# ---------------------------------------------------------------------------
+
+BATTERY_RESERVE_PCT = 20
+"""FR-4.15 / FR-6.7 / BR-4: below this an AMR stops bidding, finishes held
+work, and routes to a charger."""
+
+BATTERY_RESUME_PCT = 80
+"""Appendix A: charge above which a CHARGING AMR returns to IDLE."""
+
+BATTERY_DRAIN_PER_MM_Q8 = q8(0.0004)
+"""Simulated drain in percentage points per millimetre travelled. 0.4%/m, so a
+full charge covers roughly 250 m of travel."""
+
+# ---------------------------------------------------------------------------
+# Localization and confidence (FE-7)
+# ---------------------------------------------------------------------------
+
+CONFIDENCE_MAX = 255
+"""Confidence immediately after a successful ground-marker decode (FR-7.2)."""
+
+CONFIDENCE_THRESHOLD = 128
+"""FR-5.14 / NFR-2.3: below this an AMR must not claim a reservation."""
+
+CONFIDENCE_DECAY_PER_METRE = 12
+"""FR-7.3: confidence lost per metre since the last marker. At 12 per metre
+confidence crosses the threshold after ~10.5 m, which on the benchmark map is
+longer than one aisle and shorter than two -- so a robot that misses a single
+marker degrades, while a robot reading markers stays trusted."""
+
+# ---------------------------------------------------------------------------
+# Traffic model (FE-2)
+# ---------------------------------------------------------------------------
+
+EWMA_ALPHA_Q8 = q8(0.25)
+"""Smoothing factor for the learned edge-time EWMA (FR-2.4)."""
+
+PHEROMONE_MAX = 255
+"""Section 3.4.1: the deposit field is a uint8, so this is a wire limit."""
+
+PHEROMONE_DEPOSIT = 40
+"""Pheromone added to an edge on traversal (FR-2.3)."""
+
+PHEROMONE_DECAY_STEP = 8
+"""Pheromone removed from every edge each PHEROMONE_DECAY_MS period. Decay is
+subtractive rather than multiplicative so it stays integer and reaches exactly
+zero -- FR-2.3 requires decay *towards zero*, and an integer multiplicative
+rule stalls at 1."""
+
+TRAFFIC_MODEL_MAX_BYTES = 1024
+"""FR-2.8 / NFR-1.9: the complete traffic model must fit 1 KB of SRAM."""
+
+# ---------------------------------------------------------------------------
+# Wire format (section 3.4, IF-4.1, CON-2, CON-10)
+# ---------------------------------------------------------------------------
+
+MAX_FRAME_BYTES = 250
+"""IF-4.1 / CON-2: one ESP-NOW frame. Asserted for every message type by
+tests/test_architecture.py -- this is why framing is binary, not JSON."""
+
+EDGE_ID_BITS_DEFAULT = 8
+"""ASM-2 / CON-10: node and edge identifiers are 8-bit on the wire.
+
+The scale100 scenario overrides this to 16 for the fleet-scale map. Note the
+SRS defect being worked around: ASM-2 and CON-10 cap edge ids at 255, but
+Appendix D sizes the memory budget for 400 edges. Both cannot hold. ASM-2
+itself anticipates the revision -- "packet field widths and memory budget must
+be revised".
+"""
+
+MAX_NODES_8BIT = 255
+MAX_EDGES_8BIT = 255
+MAX_NODES_16BIT = 65_535
+MAX_EDGES_16BIT = 65_535
+
+# ---------------------------------------------------------------------------
+# Robot geometry and motion
+# ---------------------------------------------------------------------------
+
+ROBOT_RADIUS_MM = 250
+"""Half-width of an AMR footprint, used by the geometric collision check."""
+
+COLLISION_DISTANCE_MM = 2 * ROBOT_RADIUS_MM
+"""Centre separation below which two AMRs have physically overlapped. This is
+the *geometric* event; whether it means the algorithm failed is decided by
+simulator/collision_detector.py, per the guide's division of responsibility."""
+
+NOMINAL_SPEED_MM_S = 800
+"""Commanded cruise speed."""
+
+YIELD_SPEED_MM_S = 240
+"""Speed while shedding to push an ETA past a conflicting window (FR-5.6).
+Non-zero by design: FR-5.6 and NFR-2.4 require yielding by anticipation, not
+by braking to a halt."""
+
+MIN_SPEED_MM_S = 80
+"""Floor on commanded speed while still notionally moving."""
+
+# ---------------------------------------------------------------------------
+# Baseline controller, Configuration A (FR-10.5)
+# ---------------------------------------------------------------------------
+
+STOP_WAIT_RADIUS_MM = 1800
+"""FR-10.5: fixed radius within which the stop-and-wait baseline halts.
+Deliberately larger than COLLISION_DISTANCE_MM -- a reactive controller with no
+intent exchange must be conservative, and that conservatism is precisely the
+cost the benchmark measures."""
+
+STOP_WAIT_RESUME_HYSTERESIS_MM = 200
+"""Extra clearance required before a halted baseline AMR resumes, so it does
+not chatter on the radius boundary."""
+
+# ---------------------------------------------------------------------------
+# Exception handling (FE-6)
+# ---------------------------------------------------------------------------
+
+OBSTACLE_WAIT_MS = 3000
+"""FR-6.6: dwell before repairing a route around a non-cooperative obstacle."""
+
+BLOCKED_EDGE_PENALTY_MS = 1_000_000
+"""Cost applied to an edge known to be impassable. Large but finite, so an
+unreachable goal is reported as UNREACHABLE by search exhaustion (FR-3.7)
+rather than by arithmetic overflow."""
+
+INFINITE_COST = 1 << 30
+"""Sentinel for 'not traversable at all' in the composed edge cost (FE-2).
+Chosen to stay well inside a 32-bit signed range after summation."""

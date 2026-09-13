@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# benchmark output (regenerate with benchmark/runner.py)
+results/*
+!results/.gitkeep
+
+# probed machine capability, not source
+config/webots_capacity.json
+
+# webots build artefacts
+simulator/webots/*.wbproj

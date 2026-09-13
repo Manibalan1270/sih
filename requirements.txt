@@ -1,0 +1,17 @@
+# ROBOTON — software side
+# Python 3.11+  (developed on 3.14)
+
+# --- runtime ---
+fastapi>=0.110          # dashboard + run-control backend
+uvicorn>=0.27           # ASGI server
+websockets>=12.0        # telemetry push to the browser
+
+# --- benchmark / analysis ---
+# matplotlib deliberately NOT used: its compiled _c_internal_utils extension is
+# blocked by an Application Control policy on the dev host. Charts render as SVG
+# from the standard library instead -- see scripts/svgplot.py.
+
+# --- development / verification only ---
+pytest>=8.0
+networkx>=3.0           # TESTS ONLY: reference cross-check of our own graph + A*
+                        # (FR-3.1 requires us to own graph.py)

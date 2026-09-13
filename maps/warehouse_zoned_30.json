@@ -1,0 +1,1360 @@
+{
+ "name": "warehouse_zoned_30",
+ "description": "Zoned warehouse for the 30-AMR visual scenario. 12x6 grid of aisle intersections (44 m x 25 m), partitioned into 6 zones as 3 column bands x 2 row bands. Columns 4 and 7 are single-lane pick-aisles, so there are two interior chokepoints rather than one, and robots have a real choice of which to contend for. Fits 8-bit node and edge ids.",
+ "grid": {
+  "cols": 12,
+  "rows": 6
+ },
+ "zone_bands": {
+  "cols": 3,
+  "rows": 2
+ },
+ "nodes": [
+  {
+   "id": 0,
+   "name": "C00R00",
+   "x": 0,
+   "y": 0,
+   "marker": true,
+   "charger": true,
+   "zone": 0
+  },
+  {
+   "id": 1,
+   "name": "C01R00",
+   "x": 4000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 2,
+   "name": "C02R00",
+   "x": 8000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 3,
+   "name": "C03R00",
+   "x": 12000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 4,
+   "name": "C04R00",
+   "x": 16000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 5,
+   "name": "C05R00",
+   "x": 20000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 6,
+   "name": "C06R00",
+   "x": 24000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 7,
+   "name": "C07R00",
+   "x": 28000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 8,
+   "name": "C08R00",
+   "x": 32000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 9,
+   "name": "C09R00",
+   "x": 36000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 10,
+   "name": "C10R00",
+   "x": 40000,
+   "y": 0,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 11,
+   "name": "C11R00",
+   "x": 44000,
+   "y": 0,
+   "marker": true,
+   "charger": true,
+   "zone": 2
+  },
+  {
+   "id": 12,
+   "name": "C00R01",
+   "x": 0,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 13,
+   "name": "C01R01",
+   "x": 4000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 14,
+   "name": "C02R01",
+   "x": 8000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 15,
+   "name": "C03R01",
+   "x": 12000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 16,
+   "name": "C04R01",
+   "x": 16000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 17,
+   "name": "C05R01",
+   "x": 20000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 18,
+   "name": "C06R01",
+   "x": 24000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 19,
+   "name": "C07R01",
+   "x": 28000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 20,
+   "name": "C08R01",
+   "x": 32000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 21,
+   "name": "C09R01",
+   "x": 36000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 22,
+   "name": "C10R01",
+   "x": 40000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 23,
+   "name": "C11R01",
+   "x": 44000,
+   "y": 5000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 24,
+   "name": "C00R02",
+   "x": 0,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 25,
+   "name": "C01R02",
+   "x": 4000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 26,
+   "name": "C02R02",
+   "x": 8000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 27,
+   "name": "C03R02",
+   "x": 12000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 0
+  },
+  {
+   "id": 28,
+   "name": "C04R02",
+   "x": 16000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 29,
+   "name": "C05R02",
+   "x": 20000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 30,
+   "name": "C06R02",
+   "x": 24000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 31,
+   "name": "C07R02",
+   "x": 28000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 1
+  },
+  {
+   "id": 32,
+   "name": "C08R02",
+   "x": 32000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 33,
+   "name": "C09R02",
+   "x": 36000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 34,
+   "name": "C10R02",
+   "x": 40000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 35,
+   "name": "C11R02",
+   "x": 44000,
+   "y": 10000,
+   "marker": true,
+   "charger": false,
+   "zone": 2
+  },
+  {
+   "id": 36,
+   "name": "C00R03",
+   "x": 0,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 37,
+   "name": "C01R03",
+   "x": 4000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 38,
+   "name": "C02R03",
+   "x": 8000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 39,
+   "name": "C03R03",
+   "x": 12000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 40,
+   "name": "C04R03",
+   "x": 16000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 41,
+   "name": "C05R03",
+   "x": 20000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 42,
+   "name": "C06R03",
+   "x": 24000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 43,
+   "name": "C07R03",
+   "x": 28000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 44,
+   "name": "C08R03",
+   "x": 32000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 45,
+   "name": "C09R03",
+   "x": 36000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 46,
+   "name": "C10R03",
+   "x": 40000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 47,
+   "name": "C11R03",
+   "x": 44000,
+   "y": 15000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 48,
+   "name": "C00R04",
+   "x": 0,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 49,
+   "name": "C01R04",
+   "x": 4000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 50,
+   "name": "C02R04",
+   "x": 8000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 51,
+   "name": "C03R04",
+   "x": 12000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 52,
+   "name": "C04R04",
+   "x": 16000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 53,
+   "name": "C05R04",
+   "x": 20000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 54,
+   "name": "C06R04",
+   "x": 24000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 55,
+   "name": "C07R04",
+   "x": 28000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 56,
+   "name": "C08R04",
+   "x": 32000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 57,
+   "name": "C09R04",
+   "x": 36000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 58,
+   "name": "C10R04",
+   "x": 40000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 59,
+   "name": "C11R04",
+   "x": 44000,
+   "y": 20000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 60,
+   "name": "C00R05",
+   "x": 0,
+   "y": 25000,
+   "marker": true,
+   "charger": true,
+   "zone": 3
+  },
+  {
+   "id": 61,
+   "name": "C01R05",
+   "x": 4000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 62,
+   "name": "C02R05",
+   "x": 8000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 63,
+   "name": "C03R05",
+   "x": 12000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 3
+  },
+  {
+   "id": 64,
+   "name": "C04R05",
+   "x": 16000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 65,
+   "name": "C05R05",
+   "x": 20000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 66,
+   "name": "C06R05",
+   "x": 24000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 67,
+   "name": "C07R05",
+   "x": 28000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 4
+  },
+  {
+   "id": 68,
+   "name": "C08R05",
+   "x": 32000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 69,
+   "name": "C09R05",
+   "x": 36000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 70,
+   "name": "C10R05",
+   "x": 40000,
+   "y": 25000,
+   "marker": true,
+   "charger": false,
+   "zone": 5
+  },
+  {
+   "id": 71,
+   "name": "C11R05",
+   "x": 44000,
+   "y": 25000,
+   "marker": true,
+   "charger": true,
+   "zone": 5
+  }
+ ],
+ "edges": [
+  {
+   "id": 0,
+   "u": 0,
+   "v": 1
+  },
+  {
+   "id": 1,
+   "u": 1,
+   "v": 2
+  },
+  {
+   "id": 2,
+   "u": 2,
+   "v": 3
+  },
+  {
+   "id": 3,
+   "u": 3,
+   "v": 4
+  },
+  {
+   "id": 4,
+   "u": 4,
+   "v": 5
+  },
+  {
+   "id": 5,
+   "u": 5,
+   "v": 6
+  },
+  {
+   "id": 6,
+   "u": 6,
+   "v": 7
+  },
+  {
+   "id": 7,
+   "u": 7,
+   "v": 8
+  },
+  {
+   "id": 8,
+   "u": 8,
+   "v": 9
+  },
+  {
+   "id": 9,
+   "u": 9,
+   "v": 10
+  },
+  {
+   "id": 10,
+   "u": 10,
+   "v": 11
+  },
+  {
+   "id": 11,
+   "u": 12,
+   "v": 13
+  },
+  {
+   "id": 12,
+   "u": 13,
+   "v": 14
+  },
+  {
+   "id": 13,
+   "u": 14,
+   "v": 15
+  },
+  {
+   "id": 14,
+   "u": 15,
+   "v": 16
+  },
+  {
+   "id": 15,
+   "u": 16,
+   "v": 17
+  },
+  {
+   "id": 16,
+   "u": 17,
+   "v": 18
+  },
+  {
+   "id": 17,
+   "u": 18,
+   "v": 19
+  },
+  {
+   "id": 18,
+   "u": 19,
+   "v": 20
+  },
+  {
+   "id": 19,
+   "u": 20,
+   "v": 21
+  },
+  {
+   "id": 20,
+   "u": 21,
+   "v": 22
+  },
+  {
+   "id": 21,
+   "u": 22,
+   "v": 23
+  },
+  {
+   "id": 22,
+   "u": 24,
+   "v": 25
+  },
+  {
+   "id": 23,
+   "u": 25,
+   "v": 26
+  },
+  {
+   "id": 24,
+   "u": 26,
+   "v": 27
+  },
+  {
+   "id": 25,
+   "u": 27,
+   "v": 28
+  },
+  {
+   "id": 26,
+   "u": 28,
+   "v": 29
+  },
+  {
+   "id": 27,
+   "u": 29,
+   "v": 30
+  },
+  {
+   "id": 28,
+   "u": 30,
+   "v": 31
+  },
+  {
+   "id": 29,
+   "u": 31,
+   "v": 32
+  },
+  {
+   "id": 30,
+   "u": 32,
+   "v": 33
+  },
+  {
+   "id": 31,
+   "u": 33,
+   "v": 34
+  },
+  {
+   "id": 32,
+   "u": 34,
+   "v": 35
+  },
+  {
+   "id": 33,
+   "u": 36,
+   "v": 37
+  },
+  {
+   "id": 34,
+   "u": 37,
+   "v": 38
+  },
+  {
+   "id": 35,
+   "u": 38,
+   "v": 39
+  },
+  {
+   "id": 36,
+   "u": 39,
+   "v": 40
+  },
+  {
+   "id": 37,
+   "u": 40,
+   "v": 41
+  },
+  {
+   "id": 38,
+   "u": 41,
+   "v": 42
+  },
+  {
+   "id": 39,
+   "u": 42,
+   "v": 43
+  },
+  {
+   "id": 40,
+   "u": 43,
+   "v": 44
+  },
+  {
+   "id": 41,
+   "u": 44,
+   "v": 45
+  },
+  {
+   "id": 42,
+   "u": 45,
+   "v": 46
+  },
+  {
+   "id": 43,
+   "u": 46,
+   "v": 47
+  },
+  {
+   "id": 44,
+   "u": 48,
+   "v": 49
+  },
+  {
+   "id": 45,
+   "u": 49,
+   "v": 50
+  },
+  {
+   "id": 46,
+   "u": 50,
+   "v": 51
+  },
+  {
+   "id": 47,
+   "u": 51,
+   "v": 52
+  },
+  {
+   "id": 48,
+   "u": 52,
+   "v": 53
+  },
+  {
+   "id": 49,
+   "u": 53,
+   "v": 54
+  },
+  {
+   "id": 50,
+   "u": 54,
+   "v": 55
+  },
+  {
+   "id": 51,
+   "u": 55,
+   "v": 56
+  },
+  {
+   "id": 52,
+   "u": 56,
+   "v": 57
+  },
+  {
+   "id": 53,
+   "u": 57,
+   "v": 58
+  },
+  {
+   "id": 54,
+   "u": 58,
+   "v": 59
+  },
+  {
+   "id": 55,
+   "u": 60,
+   "v": 61
+  },
+  {
+   "id": 56,
+   "u": 61,
+   "v": 62
+  },
+  {
+   "id": 57,
+   "u": 62,
+   "v": 63
+  },
+  {
+   "id": 58,
+   "u": 63,
+   "v": 64
+  },
+  {
+   "id": 59,
+   "u": 64,
+   "v": 65
+  },
+  {
+   "id": 60,
+   "u": 65,
+   "v": 66
+  },
+  {
+   "id": 61,
+   "u": 66,
+   "v": 67
+  },
+  {
+   "id": 62,
+   "u": 67,
+   "v": 68
+  },
+  {
+   "id": 63,
+   "u": 68,
+   "v": 69
+  },
+  {
+   "id": 64,
+   "u": 69,
+   "v": 70
+  },
+  {
+   "id": 65,
+   "u": 70,
+   "v": 71
+  },
+  {
+   "id": 66,
+   "u": 0,
+   "v": 12
+  },
+  {
+   "id": 67,
+   "u": 12,
+   "v": 24
+  },
+  {
+   "id": 68,
+   "u": 24,
+   "v": 36
+  },
+  {
+   "id": 69,
+   "u": 36,
+   "v": 48
+  },
+  {
+   "id": 70,
+   "u": 48,
+   "v": 60
+  },
+  {
+   "id": 71,
+   "u": 1,
+   "v": 13
+  },
+  {
+   "id": 72,
+   "u": 13,
+   "v": 25
+  },
+  {
+   "id": 73,
+   "u": 25,
+   "v": 37
+  },
+  {
+   "id": 74,
+   "u": 37,
+   "v": 49
+  },
+  {
+   "id": 75,
+   "u": 49,
+   "v": 61
+  },
+  {
+   "id": 76,
+   "u": 2,
+   "v": 14
+  },
+  {
+   "id": 77,
+   "u": 14,
+   "v": 26
+  },
+  {
+   "id": 78,
+   "u": 26,
+   "v": 38
+  },
+  {
+   "id": 79,
+   "u": 38,
+   "v": 50
+  },
+  {
+   "id": 80,
+   "u": 50,
+   "v": 62
+  },
+  {
+   "id": 81,
+   "u": 3,
+   "v": 15
+  },
+  {
+   "id": 82,
+   "u": 15,
+   "v": 27
+  },
+  {
+   "id": 83,
+   "u": 27,
+   "v": 39
+  },
+  {
+   "id": 84,
+   "u": 39,
+   "v": 51
+  },
+  {
+   "id": 85,
+   "u": 51,
+   "v": 63
+  },
+  {
+   "id": 86,
+   "u": 4,
+   "v": 16,
+   "single_lane": true
+  },
+  {
+   "id": 87,
+   "u": 16,
+   "v": 28,
+   "single_lane": true
+  },
+  {
+   "id": 88,
+   "u": 28,
+   "v": 40,
+   "single_lane": true
+  },
+  {
+   "id": 89,
+   "u": 40,
+   "v": 52,
+   "single_lane": true
+  },
+  {
+   "id": 90,
+   "u": 52,
+   "v": 64,
+   "single_lane": true
+  },
+  {
+   "id": 91,
+   "u": 5,
+   "v": 17
+  },
+  {
+   "id": 92,
+   "u": 17,
+   "v": 29
+  },
+  {
+   "id": 93,
+   "u": 29,
+   "v": 41
+  },
+  {
+   "id": 94,
+   "u": 41,
+   "v": 53
+  },
+  {
+   "id": 95,
+   "u": 53,
+   "v": 65
+  },
+  {
+   "id": 96,
+   "u": 6,
+   "v": 18
+  },
+  {
+   "id": 97,
+   "u": 18,
+   "v": 30
+  },
+  {
+   "id": 98,
+   "u": 30,
+   "v": 42
+  },
+  {
+   "id": 99,
+   "u": 42,
+   "v": 54
+  },
+  {
+   "id": 100,
+   "u": 54,
+   "v": 66
+  },
+  {
+   "id": 101,
+   "u": 7,
+   "v": 19,
+   "single_lane": true
+  },
+  {
+   "id": 102,
+   "u": 19,
+   "v": 31,
+   "single_lane": true
+  },
+  {
+   "id": 103,
+   "u": 31,
+   "v": 43,
+   "single_lane": true
+  },
+  {
+   "id": 104,
+   "u": 43,
+   "v": 55,
+   "single_lane": true
+  },
+  {
+   "id": 105,
+   "u": 55,
+   "v": 67,
+   "single_lane": true
+  },
+  {
+   "id": 106,
+   "u": 8,
+   "v": 20
+  },
+  {
+   "id": 107,
+   "u": 20,
+   "v": 32
+  },
+  {
+   "id": 108,
+   "u": 32,
+   "v": 44
+  },
+  {
+   "id": 109,
+   "u": 44,
+   "v": 56
+  },
+  {
+   "id": 110,
+   "u": 56,
+   "v": 68
+  },
+  {
+   "id": 111,
+   "u": 9,
+   "v": 21
+  },
+  {
+   "id": 112,
+   "u": 21,
+   "v": 33
+  },
+  {
+   "id": 113,
+   "u": 33,
+   "v": 45
+  },
+  {
+   "id": 114,
+   "u": 45,
+   "v": 57
+  },
+  {
+   "id": 115,
+   "u": 57,
+   "v": 69
+  },
+  {
+   "id": 116,
+   "u": 10,
+   "v": 22
+  },
+  {
+   "id": 117,
+   "u": 22,
+   "v": 34
+  },
+  {
+   "id": 118,
+   "u": 34,
+   "v": 46
+  },
+  {
+   "id": 119,
+   "u": 46,
+   "v": 58
+  },
+  {
+   "id": 120,
+   "u": 58,
+   "v": 70
+  },
+  {
+   "id": 121,
+   "u": 11,
+   "v": 23
+  },
+  {
+   "id": 122,
+   "u": 23,
+   "v": 35
+  },
+  {
+   "id": 123,
+   "u": 35,
+   "v": 47
+  },
+  {
+   "id": 124,
+   "u": 47,
+   "v": 59
+  },
+  {
+   "id": 125,
+   "u": 59,
+   "v": 71
+  }
+ ],
+ "single_lane_cols": [
+  4,
+  7
+ ],
+ "pickup_nodes": [
+  0,
+  1,
+  2,
+  3,
+  12,
+  13,
+  14,
+  15,
+  24,
+  25,
+  26,
+  27,
+  36,
+  37,
+  38,
+  39,
+  48,
+  49,
+  50,
+  51,
+  60,
+  61,
+  62,
+  63
+ ],
+ "drop_nodes": [
+  8,
+  9,
+  10,
+  11,
+  20,
+  21,
+  22,
+  23,
+  32,
+  33,
+  34,
+  35,
+  44,
+  45,
+  46,
+  47,
+  56,
+  57,
+  58,
+  59,
+  68,
+  69,
+  70,
+  71
+ ]
+}
