@@ -64,7 +64,6 @@ def require_module(relative: str) -> Path:
     """Return a source path, or skip naming the phase that creates it."""
     phase = {
         "core/arbitration.py": "Phase 6",
-        "core/reservation.py": "Phase 6",
         "core/planner_astar.py": "Phase 3",
         "core/traffic_model.py": "Phase 8",
         "communication/messages.py": "Phase 5",
@@ -99,11 +98,11 @@ class TestArbitrationPurity:
         )
 
     def test_reservation_imports_no_learned_or_random_module(self) -> None:
-        """The reservation table feeds arbitration, so it inherits the rule."""
-        path = require_module("core/reservation.py")
+        """The booking table feeds arbitration, so it inherits the rule."""
+        path = require_module("core/timewindows.py")
         offending = imported_modules(path) & self.FORBIDDEN_MODULES
         assert not offending, (
-            f"core/reservation.py imports {sorted(offending)}; it feeds the "
+            f"core/timewindows.py imports {sorted(offending)}; it feeds the "
             f"arbitration path and so must stay free of learned state (FR-2.9)"
         )
 
@@ -124,7 +123,6 @@ class TestArbitrationPurity:
 
     SAFETY_PATH = (
         "core/arbitration.py",
-        "core/reservation.py",
         "core/timewindows.py",
         "core/planner_timewindow.py",
     )

@@ -1429,7 +1429,7 @@ class Robot:
         self.metrics.plans_committed += 1
         self._adopt_plan_route(plan)
         self._index_plan_steps()
-        self._sync_plan_progress()
+        self._sync_plan_progress(adopting=True)
         self._broadcast_path(now_ms, result)
         result.notes.append(f"committed {plan} ({len(plan.steps)} steps)")
         return True
@@ -1655,9 +1655,19 @@ class Robot:
             return d <= (0 if model.has_region(to_node) else -config.JUNCTION_FOOTPRINT_MM)
         return d <= (config.JUNCTION_FOOTPRINT_MM if model.has_region(to_node) else 0)
 
-    def _sync_plan_progress(self) -> None:
+    def _sync_plan_progress(self, *, adopting: bool = False) -> None:
         """Advance ``plan_index`` (released) and ``_entered_index`` (entered) to match
-        where the robot physically is. Both only ever move forward within a plan."""
+        where the robot physically is. Both only ever move forward within a plan.
+
+        When ``adopting`` a plan, every step anchored at or behind the node under
+        the robot is under the wheels -- the prefix of a mid-edge plan, the station
+        a plan leaves from, the region a plan starts inside -- and counts as
+        entered. Asking their boundary distance instead counted the lane a robot
+        had just turned onto as still ahead of it, with an entry time in the past,
+        and that read as "late" every tick. Only when adopting: applied every tick
+        it counted the corridor *beyond* a junction as entered the moment the robot
+        reached the junction, and the corridor's gate vanished.
+        """
         plan = self.plan
         if plan is None or len(self._step_pos) != len(plan.steps):
             return
@@ -1666,13 +1676,9 @@ class Robot:
             self.plan_index += 1
         if self._entered_index < self.plan_index:
             self._entered_index = self.plan_index
-        # A step anchored at or behind the node under the robot is under the
-        # wheels -- the prefix of a mid-edge plan, the station a plan leaves from,
-        # the region a plan starts inside. Asking their boundary distance instead
-        # counted the lane a robot had just turned onto as still ahead of it, with
-        # an entry time in the past, and that read as "late" every tick.
-        while self._entered_index < len(steps) and self._step_pos[self._entered_index] <= self.route_index:
-            self._entered_index += 1
+        if adopting:
+            while self._entered_index < len(steps) and self._step_pos[self._entered_index] <= self.route_index:
+                self._entered_index += 1
         while self._entered_index < len(steps) and self._boundary_distance_mm(self._entered_index) <= 0:
             self._entered_index += 1
 

@@ -55,22 +55,26 @@ def coordinated(seed: int = 0, *, tasks: int | None = None):
 
 
 def crossing() -> tuple[Graph, ResourceModel, TimeWindowPlanner]:
-    """A four-way junction with a station on every arm: the TC-1 geometry."""
+    """A four-way junction with a station on every arm: the TC-1 geometry. The
+    west arm has a bend (node 5) halfway, so a second robot can be placed on the
+    approach behind the one leaving the station."""
     graph = Graph.from_dict(
         {
             "name": "cross",
             "nodes": [
                 {"id": 0, "x": 0, "y": 0},
-                {"id": 1, "x": -8000, "y": 0},
-                {"id": 2, "x": 8000, "y": 0},
-                {"id": 3, "x": 0, "y": -8000},
-                {"id": 4, "x": 0, "y": 8000},
+                {"id": 1, "x": -16000, "y": 0},
+                {"id": 2, "x": 16000, "y": 0},
+                {"id": 3, "x": 0, "y": -16000},
+                {"id": 4, "x": 0, "y": 16000},
+                {"id": 5, "x": -8000, "y": 0},
             ],
             "edges": [
-                {"id": 0, "u": 1, "v": 0},
+                {"id": 0, "u": 1, "v": 5},
                 {"id": 1, "u": 0, "v": 2},
                 {"id": 2, "u": 3, "v": 0},
                 {"id": 3, "u": 0, "v": 4},
+                {"id": 4, "u": 5, "v": 0},
             ],
         }
     )
@@ -125,7 +129,7 @@ class TestTC1CrossingJunction:
         second = plan_across(planner, table, robot_id=3, start=3, goal=4, at_ms=clear_at)
         lane_in = second.steps[1]
         assert lane_in.exit_ms == region_window(second, 0).enter_ms
-        assert region_window(second, 0).enter_ms - clear_at == lane_in.exit_ms - lane_in.enter_ms
+        assert lane_in.enter_ms == clear_at
 
     def test_a_race_gives_both_robots_opposite_answers(self) -> None:
         """Appendix C's Theorem in miniature: two plans committed in the same
@@ -183,11 +187,11 @@ class TestTC1CrossingJunction:
         table = ResourceTable()
         leader = plan_across(planner, table, robot_id=1, start=1, goal=2, at_ms=0)
         table.replace_plan(leader)
-        lane_leader = leader.steps[1]
-        # Already on the approach lane, a following gap behind the leader.
+        lane_leader = next(s for s in leader.steps if s.resource.key == 4)  # the last lane in
+        # Already on the approach lane past the bend, a following gap behind the leader.
         behind = Start(
             0, lane_leader.exit_ms, waitable=True,
-            prefix_node=1, prefix_ms=lane_leader.enter_ms + config.FOLLOW_GAP_MS,
+            prefix_node=5, prefix_ms=lane_leader.enter_ms + config.FOLLOW_GAP_MS,
         )
         follower = planner.plan(
             table, start=behind, goal=2, robot_id=2, priority=10, plan_seq=1,

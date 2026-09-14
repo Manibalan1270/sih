@@ -117,10 +117,19 @@ entry is gated by order, not time, so lateness is safe for it -- but a timetable
 in the past misleads every peer planning around it, and a fresh plan against the
 current table also routes around what has built up meanwhile."""
 
-HOLD_LINE_MM = 200
-"""How far outside a resource boundary a robot stops when it may not yet enter:
-between the boundary (JUNCTION_FOOTPRINT_MM from the node) and YIELD_STANDOFF_MM.
-Wide enough to stop in from yield speed within one tick's travel margin."""
+HOLD_LINE_MM = 300
+"""How far outside a resource boundary a robot stops when it may not yet enter.
+
+The boundary sits JUNCTION_FOOTPRINT_MM from the node, which is exactly where a
+robot in its 700 mm lane comes within COLLISION_DISTANCE_MM of one turning through
+the junction -- the footprint is derived as lane offset plus collision distance,
+with no margin. Standing on the boundary is therefore a collision by a millimetre;
+the hold line is the margin. At 200 the clearance was 700 mm on perpendicular
+aisles but 462 mm where an aisle meets a junction at an angle (bench3's T_MID to
+R_TOP edge): the waiting robot's own lane offset leans toward the crossing lane.
+At 300 the skewed case clears 630 mm. Shortened to half the lane where a lane is
+shorter (see Robot._hold_line_mm), which the map spacing keeps at or above this
+(tests/unit/test_maps.py)."""
 
 APPROACH_SLOW_MM = 3000
 """From this far short of a boundary it may not yet cross, a robot approaches at

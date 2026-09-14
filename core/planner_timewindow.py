@@ -436,8 +436,12 @@ class TimeWindowPlanner:
             entered = start.at_ms - cross
             if start.region_entered_ms >= 0:
                 entered = min(entered, start.region_entered_ms)
+            # Exactly one crossing long, as every region step is -- the wire form
+            # rebuilds regions that way. Any lateness lands on the lane beyond,
+            # which is held from the region's booked exit; nobody else can reach
+            # that lane while this robot is in the region, so that is safe.
             steps.append(Step(model.lane(edge_id, start.node), lane_from, max(lane_from, entered)))
-            steps.append(Step(model.region(start.node), entered, start.at_ms))
+            steps.append(Step(model.region(start.node), entered, entered + cross))
         elif model.is_station(start.node):
             # Driving into a station: the spur is the station's, held from here
             # until the robot has stood its turnaround there.
@@ -491,6 +495,9 @@ class TimeWindowPlanner:
             )
         for position, (group, s, end) in enumerate(chain):
             nodes.extend(group.nodes[1:])
+            # Leaving a region the plan opened inside: the first stretch beyond it
+            # is held from the region's booked exit, however late the robot is.
+            opens_from = steps[-1].exit_ms if (position == 0 and start.in_region and steps) else None
             # A lane is held until the robot enters what comes next. The closing lane
             # of a group ends when the *following* group starts, which includes any
             # wait at the lane's end for that group's first window -- the robot is
@@ -499,8 +506,10 @@ class TimeWindowPlanner:
             # its end; the round-trip through the wire form caught the discrepancy.
             follows_at = chain[position + 1][1] if position + 1 < len(chain) else end
             for index, rel in enumerate(group.rels):
-                exit_ms = s + rel.exit
+                enter_ms, exit_ms = s + rel.enter, s + rel.exit
+                if index == 0 and opens_from is not None and rel.resource.kind in (LANE, CORRIDOR):
+                    enter_ms = min(enter_ms, opens_from)
                 if index == len(group.rels) - 1 and rel.resource.kind == LANE:
                     exit_ms = max(end, follows_at)
-                steps.append(Step(rel.resource, s + rel.enter, exit_ms))
+                steps.append(Step(rel.resource, enter_ms, exit_ms))
         return RoutePlan(robot_id, plan_seq, priority, committed_ms, tuple(nodes), tuple(steps))
