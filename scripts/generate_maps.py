@@ -143,20 +143,48 @@ def build_grid(
         for col in range(cols)
         if col in (0, cols - 1) or row in (0, rows - 1)
     ]
-    endpoints = set(pickups) | set(drops)
-    anchors = [n for n in perimeter if n not in endpoints] or perimeter
+    # Every perimeter node is an anchor, not only those clear of task endpoints.
+    #
+    # Excluding endpoint columns left 8 anchors for 30 bays on this grid and 16 for 100
+    # on the larger one, so bays had to stack several deep off each anchor -- and it is
+    # the *bay* that must not be a task endpoint, which it never is, being a new node.
+    # An anchor next to a busy node costs a little throughput; too few anchors cost
+    # correctness.
+    anchors = perimeter
+    x_min = min(n["x"] for n in nodes)
+    x_max = max(n["x"] for n in nodes)
+    y_min = min(n["y"] for n in nodes)
+    y_max = max(n["y"] for n in nodes)
+    # bay id at (anchor, depth), so a deeper bay can hang off the one before it
+    ray: dict[tuple[int, int], int] = {}
     for index in range(bays):
         anchor = anchors[index % len(anchors)]
         anchor_node = nodes[anchor]
         depth = 1 + index // len(anchors)
-        outward = -1 if anchor_node["x"] == 0 else 1
+
+        # Outward means away from the floor, perpendicular to the edge the anchor sits
+        # on. Deciding it from ``x == 0`` alone sent every bay on the top and bottom
+        # rows travelling *along* the aisle instead of off it, landing them on the
+        # neighbouring aisle nodes: 15 coordinates on warehouse_zoned_30 were shared by
+        # two or more nodes, and bay edges lay on top of cross-aisle edges. Robots then
+        # collided on lanes that shared no node, which no junction arbitration can
+        # prevent because there is no junction there to arbitrate.
+        if anchor_node["x"] == x_min:
+            step = (-(COL_SPACING_MM // 2), 0)
+        elif anchor_node["x"] == x_max:
+            step = (COL_SPACING_MM // 2, 0)
+        elif anchor_node["y"] == y_min:
+            step = (0, -(ROW_SPACING_MM // 2))
+        else:
+            step = (0, ROW_SPACING_MM // 2)
+
         bay_id = len(nodes)
         nodes.append(
             {
                 "id": bay_id,
                 "name": f"BAY{index:03d}",
-                "x": anchor_node["x"] + outward * depth * (COL_SPACING_MM // 2),
-                "y": anchor_node["y"],
+                "x": anchor_node["x"] + step[0] * depth,
+                "y": anchor_node["y"] + step[1] * depth,
                 "junction": False,
                 "marker": True,
                 "parking": True,
@@ -164,7 +192,12 @@ def build_grid(
                 "zone": anchor_node["zone"],
             }
         )
-        add_edge(anchor, bay_id)
+        # A second bay on the same ray hangs off the first, not off the anchor. An edge
+        # straight from the anchor to depth 2 would pass through depth 1, which is the
+        # same overlapping-lane defect in miniature. Chained, the ray is a dead-end
+        # charging lane, which is what it physically is.
+        ray[(anchor, depth)] = bay_id
+        add_edge(ray.get((anchor, depth - 1), anchor), bay_id)
 
     return {
         "name": name,

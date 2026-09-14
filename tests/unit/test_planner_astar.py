@@ -176,7 +176,21 @@ class TestHeuristic:
         assert graph.straight_line_ms(0, goal) == astar.route_cost(route), (
             "the heuristic should be exact even in the case it cannot prune"
         )
-        assert astar.stats.expansions == _expansions_with_zero_heuristic(graph, 0, goal)
+        # Every floor node ties, so every floor node is expanded: the whole rectangle
+        # less the goal itself. The staging bays hang off the perimeter as dead-end
+        # spurs, and those the heuristic *does* prune -- a bay leads away from the goal
+        # -- while a zero heuristic wanders into every one within the cost radius.
+        #
+        # This used to assert equality with the zero-heuristic count, which held only
+        # because the bays were generated on top of floor nodes (see
+        # TestLanesDoNotOverlapWithoutAJunction in test_maps.py). Once the bays sat where
+        # they belong the equality broke in the heuristic's favour.
+        floor = cols * rows - 1
+        assert astar.stats.expansions == floor, (
+            f"expected the full floor rectangle ({floor}) and no more; "
+            f"got {astar.stats.expansions}"
+        )
+        assert _expansions_with_zero_heuristic(graph, 0, goal) >= floor
 
     def test_grid_maps_use_the_manhattan_bound(self) -> None:
         """Valid only because every edge in these maps is axis-parallel."""

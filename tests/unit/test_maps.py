@@ -265,3 +265,89 @@ class TestScenarioMapPairing:
                 f"{scenario.name}: {scenario.simulated_robots} AMRs on "
                 f"{len(graph.nodes)} nodes is {nodes_per_robot:.1f} nodes/robot"
             )
+
+
+class TestLanesDoNotOverlapWithoutAJunction:
+    """A roadmap is only arbitrable where its conflicts are marked.
+
+    Every safety guarantee here resolves conflicts *at nodes*: junction reservations,
+    corridor claims and the corner footprint all key off a node two robots share. Two
+    lanes that pass through the same ground while sharing no node therefore have no
+    resource to contend for, and no amount of correct arbitration can separate the robots
+    on them. Annotating a roadmap so that every place lanes can conflict is represented is
+    a precondition of deadlock-free lane-based routing, not an optimisation.
+
+    This was not hypothetical. The bay generator offset every bay along +x regardless of
+    which side of the floor its anchor sat on, so bays anchored on the top and bottom rows
+    marched *along* the cross-aisle instead of away from it. On warehouse_zoned_30 fifteen
+    coordinates were occupied by two or more nodes -- one point held four -- and bay edges
+    lay directly on top of cross-aisle edges. At 30 AMRs that produced collisions between
+    robots whose edges shared no node, which read as a coordination defect and was not one.
+    """
+
+    def separation_mm(self, graph, a: int, b: int) -> float:
+        import math
+
+        def point_to_segment(p, s, e) -> float:
+            sx, sy = s
+            ex, ey = e
+            px, py = p
+            dx, dy = ex - sx, ey - sy
+            length_sq = dx * dx + dy * dy
+            if length_sq == 0:
+                return math.dist(p, s)
+            t = max(0.0, min(1.0, ((px - sx) * dx + (py - sy) * dy) / length_sq))
+            return math.dist(p, (sx + t * dx, sy + t * dy))
+
+        def ends(edge_id):
+            edge = graph.edge(edge_id)
+            u, v = graph.node(edge.u), graph.node(edge.v)
+            return (u.x_mm, u.y_mm), (v.x_mm, v.y_mm)
+
+        (a1, a2), (b1, b2) = ends(a), ends(b)
+        return min(
+            point_to_segment(a1, b1, b2),
+            point_to_segment(a2, b1, b2),
+            point_to_segment(b1, a1, a2),
+            point_to_segment(b2, a1, a2),
+        )
+
+    @pytest.mark.parametrize("map_name", ALL_MAP_NAMES)
+    def test_no_two_nodes_occupy_the_same_point(self, map_name: str) -> None:
+        from core.graph import Graph
+
+        graph = Graph.load(f"maps/{map_name}.json")
+        seen: dict[tuple[int, int], int] = {}
+        for node_id in graph.nodes:
+            node = graph.node(node_id)
+            point = (node.x_mm, node.y_mm)
+            assert point not in seen, (
+                f"{map_name}: nodes {seen[point]} and {node_id} are both at {point}"
+            )
+            seen[point] = node_id
+
+    @pytest.mark.parametrize("map_name", ALL_MAP_NAMES)
+    def test_lanes_sharing_no_node_stay_clear_of_each_other(self, map_name: str) -> None:
+        """Wide enough for two robots to pass in opposite lanes without touching.
+
+        Robots keep AISLE_LANE_OFFSET_MM to one side of the centre line, so two lanes
+        need that twice over plus the collision distance between them.
+        """
+        import itertools
+
+        from core import config
+        from core.graph import Graph
+
+        graph = Graph.load(f"maps/{map_name}.json")
+        required = config.COLLISION_DISTANCE_MM + 2 * config.AISLE_LANE_OFFSET_MM
+        for a, b in itertools.combinations(sorted(graph.edges), 2):
+            edge_a, edge_b = graph.edge(a), graph.edge(b)
+            if {edge_a.u, edge_a.v} & {edge_b.u, edge_b.v}:
+                continue  # they meet at a node, which is what arbitration is for
+            gap = self.separation_mm(graph, a, b)
+            assert gap >= required, (
+                f"{map_name}: edges {a} ({edge_a.u}->{edge_a.v}) and {b} "
+                f"({edge_b.u}->{edge_b.v}) share no node but pass {gap:.0f} mm apart; "
+                f"{required} mm is needed. Robots there cannot be separated by "
+                f"arbitration, because they contend for no common node."
+            )

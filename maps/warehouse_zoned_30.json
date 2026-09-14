@@ -589,332 +589,332 @@
   {
    "id": 72,
    "name": "BAY000",
-   "x": 18000,
+   "x": -2000,
    "y": 0,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 0
   },
   {
    "id": 73,
    "name": "BAY001",
-   "x": 22000,
-   "y": 0,
+   "x": 4000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 0
   },
   {
    "id": 74,
    "name": "BAY002",
-   "x": 26000,
-   "y": 0,
+   "x": 8000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 0
   },
   {
    "id": 75,
    "name": "BAY003",
-   "x": 30000,
-   "y": 0,
+   "x": 12000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 0
   },
   {
    "id": 76,
    "name": "BAY004",
-   "x": 18000,
-   "y": 25000,
+   "x": 16000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 1
   },
   {
    "id": 77,
    "name": "BAY005",
-   "x": 22000,
-   "y": 25000,
+   "x": 20000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 1
   },
   {
    "id": 78,
    "name": "BAY006",
-   "x": 26000,
-   "y": 25000,
+   "x": 24000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 1
   },
   {
    "id": 79,
    "name": "BAY007",
-   "x": 30000,
-   "y": 25000,
+   "x": 28000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 1
   },
   {
    "id": 80,
    "name": "BAY008",
-   "x": 20000,
-   "y": 0,
+   "x": 32000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 2
   },
   {
    "id": 81,
    "name": "BAY009",
-   "x": 24000,
-   "y": 0,
+   "x": 36000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 2
   },
   {
    "id": 82,
    "name": "BAY010",
-   "x": 28000,
-   "y": 0,
+   "x": 40000,
+   "y": -2500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 2
   },
   {
    "id": 83,
    "name": "BAY011",
-   "x": 32000,
+   "x": 46000,
    "y": 0,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 2
   },
   {
    "id": 84,
    "name": "BAY012",
-   "x": 20000,
-   "y": 25000,
+   "x": -2000,
+   "y": 5000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 0
   },
   {
    "id": 85,
    "name": "BAY013",
-   "x": 24000,
-   "y": 25000,
+   "x": 46000,
+   "y": 5000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 2
   },
   {
    "id": 86,
    "name": "BAY014",
-   "x": 28000,
-   "y": 25000,
+   "x": -2000,
+   "y": 10000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 0
   },
   {
    "id": 87,
    "name": "BAY015",
-   "x": 32000,
-   "y": 25000,
+   "x": 46000,
+   "y": 10000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 2
   },
   {
    "id": 88,
    "name": "BAY016",
-   "x": 22000,
-   "y": 0,
+   "x": -2000,
+   "y": 15000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 3
   },
   {
    "id": 89,
    "name": "BAY017",
-   "x": 26000,
-   "y": 0,
+   "x": 46000,
+   "y": 15000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 5
   },
   {
    "id": 90,
    "name": "BAY018",
-   "x": 30000,
-   "y": 0,
+   "x": -2000,
+   "y": 20000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 3
   },
   {
    "id": 91,
    "name": "BAY019",
-   "x": 34000,
-   "y": 0,
+   "x": 46000,
+   "y": 20000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 5
   },
   {
    "id": 92,
    "name": "BAY020",
-   "x": 22000,
+   "x": -2000,
    "y": 25000,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 3
   },
   {
    "id": 93,
    "name": "BAY021",
-   "x": 26000,
-   "y": 25000,
+   "x": 4000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 3
   },
   {
    "id": 94,
    "name": "BAY022",
-   "x": 30000,
-   "y": 25000,
+   "x": 8000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 3
   },
   {
    "id": 95,
    "name": "BAY023",
-   "x": 34000,
-   "y": 25000,
+   "x": 12000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 3
   },
   {
    "id": 96,
    "name": "BAY024",
-   "x": 24000,
-   "y": 0,
+   "x": 16000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 4
   },
   {
    "id": 97,
    "name": "BAY025",
-   "x": 28000,
-   "y": 0,
+   "x": 20000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 4
   },
   {
    "id": 98,
    "name": "BAY026",
-   "x": 32000,
-   "y": 0,
+   "x": 24000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 4
   },
   {
    "id": 99,
    "name": "BAY027",
-   "x": 36000,
-   "y": 0,
+   "x": 28000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 1
+   "zone": 4
   },
   {
    "id": 100,
    "name": "BAY028",
-   "x": 24000,
-   "y": 25000,
+   "x": 32000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 5
   },
   {
    "id": 101,
    "name": "BAY029",
-   "x": 28000,
-   "y": 25000,
+   "x": 36000,
+   "y": 27500,
    "junction": false,
    "marker": true,
    "parking": true,
    "charger": true,
-   "zone": 4
+   "zone": 5
   }
  ],
  "edges": [
@@ -1560,152 +1560,152 @@
   },
   {
    "id": 126,
-   "u": 4,
+   "u": 0,
    "v": 72
   },
   {
    "id": 127,
-   "u": 5,
+   "u": 1,
    "v": 73
   },
   {
    "id": 128,
-   "u": 6,
+   "u": 2,
    "v": 74
   },
   {
    "id": 129,
-   "u": 7,
+   "u": 3,
    "v": 75
   },
   {
    "id": 130,
-   "u": 64,
+   "u": 4,
    "v": 76
   },
   {
    "id": 131,
-   "u": 65,
+   "u": 5,
    "v": 77
   },
   {
    "id": 132,
-   "u": 66,
+   "u": 6,
    "v": 78
   },
   {
    "id": 133,
-   "u": 67,
+   "u": 7,
    "v": 79
   },
   {
    "id": 134,
-   "u": 4,
+   "u": 8,
    "v": 80
   },
   {
    "id": 135,
-   "u": 5,
+   "u": 9,
    "v": 81
   },
   {
    "id": 136,
-   "u": 6,
+   "u": 10,
    "v": 82
   },
   {
    "id": 137,
-   "u": 7,
+   "u": 11,
    "v": 83
   },
   {
    "id": 138,
-   "u": 64,
+   "u": 12,
    "v": 84
   },
   {
    "id": 139,
-   "u": 65,
+   "u": 23,
    "v": 85
   },
   {
    "id": 140,
-   "u": 66,
+   "u": 24,
    "v": 86
   },
   {
    "id": 141,
-   "u": 67,
+   "u": 35,
    "v": 87
   },
   {
    "id": 142,
-   "u": 4,
+   "u": 36,
    "v": 88
   },
   {
    "id": 143,
-   "u": 5,
+   "u": 47,
    "v": 89
   },
   {
    "id": 144,
-   "u": 6,
+   "u": 48,
    "v": 90
   },
   {
    "id": 145,
-   "u": 7,
+   "u": 59,
    "v": 91
   },
   {
    "id": 146,
-   "u": 64,
+   "u": 60,
    "v": 92
   },
   {
    "id": 147,
-   "u": 65,
+   "u": 61,
    "v": 93
   },
   {
    "id": 148,
-   "u": 66,
+   "u": 62,
    "v": 94
   },
   {
    "id": 149,
-   "u": 67,
+   "u": 63,
    "v": 95
   },
   {
    "id": 150,
-   "u": 4,
+   "u": 64,
    "v": 96
   },
   {
    "id": 151,
-   "u": 5,
+   "u": 65,
    "v": 97
   },
   {
    "id": 152,
-   "u": 6,
+   "u": 66,
    "v": 98
   },
   {
    "id": 153,
-   "u": 7,
+   "u": 67,
    "v": 99
   },
   {
    "id": 154,
-   "u": 64,
+   "u": 68,
    "v": 100
   },
   {
    "id": 155,
-   "u": 65,
+   "u": 69,
    "v": 101
   }
  ],

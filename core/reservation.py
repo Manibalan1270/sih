@@ -423,6 +423,47 @@ class ReservationTable:
             and not _is_following(held, from_node, to_node)
         )
 
+    def diverging_leaders(
+        self,
+        junction: int,
+        window: Window,
+        *,
+        exclude_robot: int,
+        from_node: int,
+        to_node: int,
+    ) -> tuple[Reservation, ...]:
+        """Robots ahead of the asker on the same approach that will leave by another exit.
+
+        ``conflicts`` drops following traffic on purpose -- two robots entering from the
+        same node are in one lane, one behind the other, and headway keeps them apart.
+        That holds only while they stay in the lane. The moment the leader *turns*, its
+        lane offset swings perpendicular to the follower's, and the two lanes cross at
+        the corner exactly as any two perpendicular aisles do. Measured on visual30 at
+        node 20: r23 had turned onto 20->32 and was 1020 mm past the node, r20 was
+        1084 mm short of it on the shared approach from 19, and they met at 500 mm with
+        neither table showing a conflict.
+
+        The leader is not ranked, and that is the whole design. Requiring exits to match
+        inside ``_is_following`` was tried and deadlocked, because it let a follower
+        outrank the robot standing in front of it, which then yielded by stopping -- in
+        the follower's way. Here the direction of the obligation is fixed by position: a
+        robot earlier on the approach goes first, whatever its priority, and only the one
+        behind holds. An unknown exit is still not evidence of a crossing, for the reason
+        given there.
+        """
+        if from_node < 0 or to_node < 0:
+            return ()
+        return tuple(
+            held
+            for held in self.holders(junction)
+            if held.robot_id != exclude_robot
+            and held.window.overlaps(window, self.margin_ms)
+            and held.from_node == from_node
+            and held.to_node >= 0
+            and held.to_node != to_node
+            and held.window.start_ms <= window.start_ms
+        )
+
     def is_free(self, junction: int, window: Window, *, exclude_robot: int) -> bool:
         return not self.conflicts(junction, window, exclude_robot=exclude_robot)
 

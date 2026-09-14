@@ -1266,8 +1266,23 @@ class Robot:
         if to_node > config.YIELD_STANDOFF_MM:
             return False  # not at the line yet; approach it normally
         clearance = self.forward_clearance_mm
-        if clearance < 0 or clearance > config.FOLLOWING_DISTANCE_MM:
-            return False  # passage is not in doubt
+        if clearance < 0 or clearance > 2 * config.FOLLOWING_DISTANCE_MM:
+            return False  # nothing close enough ahead to halt for
+
+        # Where would the reactive limiter bring this robot to rest? It halts once the
+        # clearance falls to FOLLOWING_DISTANCE_MM, and clearance and distance-to-node
+        # both shrink together as the robot advances, so the halt lands at
+        # ``to_node - clearance + FOLLOWING_DISTANCE_MM`` from the node. If that is inside
+        # the corner, hold here, outside it, instead.
+        #
+        # Testing the current clearance against FOLLOWING_DISTANCE_MM does not work and
+        # was measured never to fire: with the obstruction at the node, clearance *equals*
+        # the distance to the node, and the two thresholds are both 1200 mm -- so
+        # clearance reaches the limit on the same tick the robot crosses the boundary,
+        # one tick too late. r6 sat at 1196 mm for a second before r3 swept it.
+        halt_at_mm = to_node - clearance + config.FOLLOWING_DISTANCE_MM
+        if halt_at_mm > config.YIELD_STANDOFF_MM:
+            return False  # it would stop clear of the corner on its own
         self.wait_cause = WaitCause(
             kind="corner",
             blocker_id=self.forward_blocker_id,
@@ -1475,9 +1490,25 @@ class Robot:
         it an opposition rather than a queue: a peer entering by the same end is
         following traffic and is handled as headway (IF-2.4).
         """
+        edge = self.graph.edge_between(from_node, to_node)
+        length_mm = self.graph.length_mm(edge) if edge is not None else 0
         for peer in self.peers.live(now_ms):
-            if peer.is_on_edge(from_node, to_node):
-                return peer
+            if not peer.is_on_edge(from_node, to_node):
+                continue
+            # "On the edge" is true from the instant a robot's current node becomes the
+            # mouth -- which includes one stopped *at* the mouth, still deciding, that
+            # has not committed at all. Ranking that robot is correct and holding for it
+            # is a cycle: measured at 6 AMRs as r2 holding e4 for an "occupant" r3 that
+            # was yielding e4 to r2. Progress is not on the wire, but the honest ETA
+            # bounds it -- a robot declares its arrival at no better than the yield
+            # speed, so (eta * yield speed) is the least distance it can still have to
+            # run. A robot at the mouth cannot have less than the whole corridor left.
+            eta = peer.arrival_at(to_node)
+            if eta is not None and length_mm > 0:
+                least_remaining_mm = max(0, eta - now_ms) * config.YIELD_SPEED_MM_S // 1000
+                if least_remaining_mm >= length_mm - config.YIELD_STANDOFF_MM:
+                    continue  # could still be standing at the mouth; rank it instead
+            return peer
         return None
 
     def _corridor_ahead(self) -> int | None:
@@ -1495,11 +1526,29 @@ class Robot:
         if self.edge_id is None:
             return None
         if self.graph.edge(self.edge_id).single_lane:
-            return None if self.progress_mm > config.ENTRY_COMMIT_MM else self.edge_id
+            # Already on it. Committed, whatever the progress: a robot that loses the
+            # contest here can only stop, and a robot stopped 0-150 mm into a corridor
+            # is standing in the exit of whoever it lost to. Measured at 6 AMRs as a
+            # two-robot cycle -- r2 inside e4 held for r3 within its headway, r3 at the
+            # mouth held for r2 to leave. The 150 mm band existed so a robot could still
+            # change its mind just past the node; it cannot, physically, and the claim
+            # it broadcasts on arrival is what makes the opposing robot yield instead.
+            return None
         remaining = self.remaining_route
-        if len(remaining) >= 3:
-            return self._single_lane_edge_between(remaining[1], remaining[2])
-        return None
+        if len(remaining) < 3:
+            return None
+        corridor = self._single_lane_edge_between(remaining[1], remaining[2])
+        if corridor is None:
+            return None
+        # Decide before the corner, or not at all. Inside JUNCTION_FOOTPRINT_MM of the
+        # mouth a robot holding position blocks the mouth for anyone leaving the
+        # corridor, and the geometry drives them together (config.JUNCTION_FOOTPRINT_MM).
+        # Past this line the robot is committed and declares occupancy from now
+        # (_hold_junction_while_in_corner); the contest is over and the other side yields
+        # to a fact rather than a bid.
+        if self._distance_to_next_node_mm() <= config.JUNCTION_FOOTPRINT_MM:
+            return None
+        return corridor
 
     def _exit_after_junction(self) -> int:
         """The node beyond the junction ahead, or -1 if the route ends there."""
@@ -1655,6 +1704,21 @@ class Robot:
             )
             if held.window.start_ms <= now_ms
         ]
+        # A robot ahead on the same approach that turns off at this junction is the
+        # other unrankable case. Following traffic is excluded from ``conflicts`` because
+        # headway keeps a queue apart -- until the leader turns, when its lane crosses
+        # the follower's at the corner. The leader is ahead and goes first, whatever its
+        # priority; the follower holds outside the corner exactly as it would for an
+        # occupant.
+        occupied_now += list(
+            self.reservations.diverging_leaders(
+                junction,
+                window,
+                exclude_robot=self.robot_id,
+                from_node=self.current_node,
+                to_node=self._exit_after_junction(),
+            )
+        )
         committed = self._distance_to_next_node_mm() <= config.JUNCTION_FOOTPRINT_MM
         if occupied_now and not committed:
             blocker = occupied_now[0]
@@ -1742,7 +1806,7 @@ class Robot:
                     resource=f"J{junction}",
                     detail="holding at the line after shedding speed",
                 )
-                return 0
+                return self._hold_or_crawl()
             return config.YIELD_SPEED_MM_S
 
         self.wait_cause = WaitCause(
@@ -1757,6 +1821,26 @@ class Robot:
         # emergency braking FR-5.6 forbids -- that rules out hard braking as the
         # normal means of resolution, and this is reached only after anticipation has
         # been tried and found insufficient.
+        return self._hold_or_crawl()
+
+    def _hold_or_crawl(self) -> int:
+        """Stop for a junction -- unless this robot is inside a single-lane corridor.
+
+        A corridor is itself a conflict region, and the rule that a robot must never come
+        to rest inside one applies to it as much as to a junction's corner. A robot that
+        halts inside a corridor to yield its *exit* junction blocks the corridor for
+        whoever is waiting to enter from the far end -- who is, in the case measured, the
+        very robot it is yielding to. bench3 seed 8: r2 held 1400 mm short of J10 inside
+        e4 for r3 (p200 over p10); r3 held outside e4 for r2, the occupant. Nobody wrong,
+        nobody moving.
+
+        So inside a corridor a hold degrades to the crawl FR-5.6 prefers anyway. That
+        is not an unsafe concession: at yield speed the robot reaches the junction five
+        times later than the crossing robot needs to clear it, and the crossing robot
+        sees the occupancy claim this robot begins broadcasting JUNCTION_FOOTPRINT_MM out.
+        """
+        if self.edge_id is not None and self.graph.edge(self.edge_id).single_lane:
+            return config.YIELD_SPEED_MM_S
         return 0
 
     def _distance_to_next_node_mm(self) -> int:

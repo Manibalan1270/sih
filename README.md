@@ -189,9 +189,9 @@ All found while implementing; all should be corrected in v1.1.
 
 ## Status
 
-Phases 0-7b complete. `bench3` at 3 AMRs records **zero collisions across 30 seeds**,
-with 29 of 30 completing. The remaining one (seed 28) is a three-robot wait-for cycle at
-the choke corridor, not a collision.
+Phases 0-7b complete. `bench3` at 3 AMRs is **clean across 30 seeds**: zero
+collisions, every run completing. 6 AMRs on the same map -- twice its design density,
+with three bays for six robots -- also completes without collisions or cycles.
 
 That sequence went 3 failures in 20 seeds -> 1 -> 0 collisions in 30, and the fixes that
 got there all turned out to be one idea applied in four places: **a robot that has no
@@ -228,15 +228,19 @@ Measured on this commit, not projected:
 
 | fleet | map | result |
 |---|---|---|
-| 3 | benchmark_map | 1 failure in 20 seeds |
-| 6 | benchmark_map | 5 of 5 seeds stall; 3 collisions on one |
-| 10 | benchmark_map | 5 of 5 stall; collisions on two |
-| 30 (`visual30`) | warehouse_zoned_30 | 24 of 120 tasks, **12 collisions** |
-| 100 (`scale100`) | warehouse_zoned_100 | 7 of 400 tasks in 157 s, **30 collisions** |
+| 3 | benchmark_map | clean, 30 of 30 seeds |
+| 6 | benchmark_map | clean, no cycle, no collision |
+| 30 (`visual30`) | warehouse_zoned_30 | seed 0 **completes 120 of 120** with 1 collision; seed 1 reaches 83 with 2 and a cycle |
+| 100 (`scale100`) | warehouse_zoned_100 | not re-measured since the map fix |
 
-6 and 10 on `benchmark_map` are not a fair test -- 15 nodes and one choke corridor is
-extreme density at that fleet size -- but `visual30` and `scale100` run on maps built
-for their fleet sizes and fail anyway.
+`visual30` began this work at 24 of 120 tasks with 12 collisions. Part of that was never
+coordination at all: the bay generator placed bays *on top of* aisle nodes -- fifteen
+coordinates on warehouse_zoned_30 held two or more nodes -- so robots collided on lanes
+that shared no node, which no junction arbitration can prevent because there is no
+junction there. That is now an invariant (`TestLanesDoNotOverlapWithoutAJunction`) and
+both generated maps satisfy it.
+
+The `scale100` figures above predate the map fix and should be read as stale.
 
 This does **not** contradict the zoning result. The 16.4 auction frames per task
 measured at 100 AMRs against NFR-1.12's budget of 40 is a statement about
