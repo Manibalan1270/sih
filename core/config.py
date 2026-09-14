@@ -318,10 +318,17 @@ simulator/collision_detector.py, per the guide's division of responsibility."""
 NOMINAL_SPEED_MM_S = 800
 """Commanded cruise speed."""
 
-YIELD_SPEED_MM_S = 700
+YIELD_SPEED_MM_S = 240
 """Speed while shedding to push an ETA past a conflicting window (FR-5.6).
 Non-zero by design: FR-5.6 and NFR-2.4 require yielding by anticipation, not
-by braking to a halt."""
+by braking to a halt.
+
+The benchmark sweep tried 700 to chase the AC-3 makespan target, but that
+pushes reach at yield speed to 490 mm against a 1200 mm JUNCTION_FOOTPRINT_MM --
+tests/unit/test_geometry.py::test_and_far_less_at_yield_speed exists precisely to
+keep this defect-10 margin bounded, and 700 blows past it. Held at 240 (168 mm
+reach) until a yield speed increase ships with either a smaller footprint or a
+JUNCTION_OCCUPANCY_MS fix, not just a benchmark win."""
 
 MIN_SPEED_MM_S = 80
 """Floor on commanded speed while still notionally moving."""

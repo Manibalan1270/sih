@@ -249,8 +249,9 @@ Last updated 2026-09-15 (Step 6 safety and benchmark evidence updated; AC-3 rema
 
 Acceptance criteria as they stand: **AC-1** largely met (70 traced TCs); **AC-2** zero collisions
 across the 30-seed `bench3` gate; **AC-4** gateway-pause behavior verified; **AC-5** met;
-**AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open**:
-B is faster than A at `0.938x`, but the requirement is `<=0.8x`.
+**AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open,
+and further off than previously measured**: with `YIELD_SPEED_MM_S` held at its safe, tested
+value, B is *slower* than A at `1.21x` (requirement is `<=0.8x`) -- see the note under Step 6.
 
 ### Left to do, in order
 
@@ -264,26 +265,33 @@ B is faster than A at `0.938x`, but the requirement is `<=0.8x`.
 2. **Step 6 -- evidence.** `benchmark/runner.py` now runs bench3 with identical seeded task
    sets for Configuration A and B and reports mean/sd makespan, collisions, coordination
    failures, deadlock cycles, stopped/precedence-hold time, and PATH frame counts. Ten seeds
-   currently prove B's safety result (`0` collisions, `0` coordination failures, `0` deadlock
-   cycles), while A records `24` collisions and `23` coordination failures. The auction window
-   is tuned to `200 ms` (from `300 ms`), and the reservation approach policy is tuned to
-   `700 mm/s` over a `3,500 mm` approach zone: ten-seed B mean makespan is now `301,438 ms`,
-   with `0` collisions, `0` coordination failures, and `0` deadlock cycles. AC-2 is now covered
+   prove B's safety result (`0` collisions, `0` coordination failures, `0` deadlock
+   cycles), while A records `24` collisions and `23` coordination failures. AC-2 is covered
    by `tests/coordination/test_safety_cases.py::test_ac2_zero_collisions_across_thirty_bench3_seeds`.
-   AC-4 is now covered
-   by `tests/coordination/test_tc.py::TestTC4GatewayPause`: stopping the gateway after tasks
-   are held still completes every held task. AC-3 is still open:
-   mean makespan is `301,438 ms` for B versus `321,252 ms` for A (`0.938x`, still not the
-   required `<=0.8x`). The formal AC-3 test remains intentionally failing. Further safe sweeps
-   of reservation margin, settle delay, and auction timing did not close the remaining gap;
-   the current policy is the best measured collision-free result. The remaining work is
-   either deeper planner/allocation optimization or a review of the AC-3 target and benchmark
-   fairness before claiming completion. The 30-seed AC-2 and
-   >=10-seed AC-3 acceptance test now exists as
-   `test_ac3_b_reduces_mean_makespan_by_twenty_percent`, but correctly fails at the current
-   `0.938x` ratio. Replan-slack, settle-delay, reservation-margin, and idle-bid sweeps did not
-   reach the target; the slack experiment caused one B collision and was rejected. Safety
-   remains the controlling constraint.
+   AC-4 is covered by `tests/coordination/test_tc.py::TestTC4GatewayPause`: stopping the
+   gateway after tasks are held still completes every held task.
+
+   The auction window is tuned to `200 ms` (from `300 ms`) and the approach zone widened to
+   `3,500 mm` (from `3,000 mm`) -- both safe, kept. A third change, raising `YIELD_SPEED_MM_S`
+   to `700 mm/s`, was tried in the same sweep to push B's makespan down further, and briefly
+   landed on `main`: **it was reverted.** At `700 mm/s` a yielding robot's reach during the
+   `JUNCTION_OCCUPANCY_MS` reservation window is `490 mm`, against `JUNCTION_FOOTPRINT_MM` of
+   `1200 mm` -- inside the 3x margin that `tests/unit/test_geometry.py::test_and_far_less_at_yield_speed`
+   exists to hold open. This is defect 10 (the reservation window does not cover the footprint,
+   documented at `core/config.py:JUNCTION_FOOTPRINT_MM`): still unfixed, and a faster yield
+   speed shrinks the safety margin around it rather than closing it. Held at `240 mm/s`
+   (`168 mm` reach) until the defect itself is fixed.
+
+   With yield speed back at its safe value, the ten-seed benchmark was re-run and the earlier
+   AC-3 number does not hold: B's mean makespan is `388,238 ms` against A's `320,832 ms` --
+   **B is slower than A, `1.21x`**, not the previously reported `0.938x`. That number depended
+   entirely on the unsafe yield-speed increase. B is still collision-free and
+   coordination-failure-free across the ten seeds; A's `24` collisions and `23` coordination
+   failures stand. AC-3 is open and, on current evidence, further from the `<=0.8x` target
+   than before this sweep, not closer. `test_ac3_b_reduces_mean_makespan_by_twenty_percent`
+   remains an intentionally failing acceptance test recording this gap. Closing it needs real
+   throughput work (item 4 below) or a fix to defect 10 that lets yield speed rise safely --
+   not another parameter sweep at the current yield speed.
 3. **A duplicate completion.** One `visual30` seed-0 run reported 121/120 tasks: a task
    completed twice (FR-4.8 duplicate holding after a lost frame). No collision, but
    `Simulation.is_finished` counts distinct ids so it hides in the report; find and fix.
