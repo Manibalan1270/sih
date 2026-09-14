@@ -6,6 +6,14 @@ order has a unique maximum, so exactly one robot proceeds and a cyclic wait cann
 form. Here that is checked three ways -- the key is a total order, every small
 conflict set has exactly one winner, and three robots on a single-lane ring
 actually clear.
+
+Coordination is route-level: a robot books its whole route as time windows against
+the routes it has heard (core/timewindows.py, core/planner_timewindow.py) and enters
+each junction region only after everyone booked ahead of it there has left. So TC-1's
+"overlap detected before approach" is the planner refusing to book a window inside
+another robot's, and "the lower-ranked AMR sheds speed" is the race rule in
+core/arbitration.py deciding whose plan stands when two were committed before
+either heard the other.
 """
 
 from __future__ import annotations
@@ -17,14 +25,22 @@ import pytest
 from core import config, scenarios
 from core.arbitration import (
     Arbiter,
-    Outcome,
-    crossing_window,
     outranks,
+    plan_precedence,
     ranking_key,
     unique_winner,
 )
-from core.reservation import IMPLIED, Reservation, ReservationTable
+from core.graph import Graph
+from core.planner_timewindow import Start, TimeWindowPlanner
 from core.state_machine import State
+from core.timewindows import (
+    REGION,
+    ResourceModel,
+    ResourceTable,
+    RoutePlan,
+    Step,
+    conflict_between,
+)
 from simulator.scenario import AuctionAllocator, build
 
 
@@ -38,21 +54,44 @@ def coordinated(seed: int = 0, *, tasks: int | None = None):
     )
 
 
-def table_with(*, junction: int, robot_id: int, priority: int, arrival_ms: int,
-               from_node: int = 1, to_node: int = 9) -> ReservationTable:
-    table = ReservationTable()
-    table.record(
-        Reservation(
-            junction=junction,
-            window=crossing_window(arrival_ms=arrival_ms),
-            robot_id=robot_id,
-            priority=priority,
-            kind=IMPLIED,
-            from_node=from_node,
-            to_node=to_node,
-        )
+def crossing() -> tuple[Graph, ResourceModel, TimeWindowPlanner]:
+    """A four-way junction with a station on every arm: the TC-1 geometry."""
+    graph = Graph.from_dict(
+        {
+            "name": "cross",
+            "nodes": [
+                {"id": 0, "x": 0, "y": 0},
+                {"id": 1, "x": -8000, "y": 0},
+                {"id": 2, "x": 8000, "y": 0},
+                {"id": 3, "x": 0, "y": -8000},
+                {"id": 4, "x": 0, "y": 8000},
+            ],
+            "edges": [
+                {"id": 0, "u": 1, "v": 0},
+                {"id": 1, "u": 0, "v": 2},
+                {"id": 2, "u": 3, "v": 0},
+                {"id": 3, "u": 0, "v": 4},
+            ],
+        }
     )
-    return table
+    model = ResourceModel(graph)
+    return graph, model, TimeWindowPlanner(model)
+
+
+def plan_across(
+    planner: TimeWindowPlanner, table: ResourceTable, *, robot_id: int, start: int,
+    goal: int, at_ms: int, priority: int = 10, committed_ms: int | None = None,
+) -> RoutePlan:
+    plan = planner.plan(
+        table, start=Start(start, at_ms, waitable=True), goal=goal, robot_id=robot_id,
+        priority=priority, plan_seq=1, committed_ms=at_ms if committed_ms is None else committed_ms,
+    )
+    assert plan is not None
+    return plan
+
+
+def region_window(plan: RoutePlan, node: int) -> Step:
+    return next(s for s in plan.steps if s.resource.kind == REGION and s.resource.key == node)
 
 
 @pytest.mark.tc
@@ -63,158 +102,104 @@ class TestTC1CrossingJunction:
     no collision (FR-5.1 to FR-5.7).
     """
 
-    def test_an_overlapping_window_is_detected(self) -> None:
-        table = table_with(junction=5, robot_id=2, priority=10, arrival_ms=10_000)
-        decision = Arbiter(robot_id=3).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_200),
-            my_priority=10,
-            table=table,
-            can_absorb_shift=lambda _: True,
-            from_node=3,
-            to_node=8,
-        )
-        assert decision.yielded
-        assert decision.shift_ms > 0
+    def test_an_overlapping_window_is_detected_before_approach(self) -> None:
+        """The second robot to plan books the junction after the first, plus the
+        margin -- at planning time, before either has left its station."""
+        _, _, planner = crossing()
+        table = ResourceTable()
+        first = plan_across(planner, table, robot_id=2, start=1, goal=2, at_ms=0)
+        table.replace_plan(first)
+        second = plan_across(planner, table, robot_id=3, start=3, goal=4, at_ms=200)
+        a, b = region_window(first, 0), region_window(second, 0)
+        assert b.enter_ms >= a.exit_ms + config.MARGIN_MS
+        assert conflict_between(first, second, config.MARGIN_MS) is None
 
     def test_windows_beyond_the_margin_do_not_conflict(self) -> None:
         """FR-5.3 separates by the margin, not merely by intersection."""
-        table = table_with(junction=5, robot_id=2, priority=10, arrival_ms=0)
-        clear_at = config.JUNCTION_OCCUPANCY_MS + config.MARGIN_MS + 100
-        decision = Arbiter(robot_id=3).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=clear_at),
-            my_priority=10,
-            table=table,
-            can_absorb_shift=lambda _: True,
-            from_node=3,
-            to_node=8,
-        )
-        assert decision.outcome is Outcome.PROCEED
+        _, _, planner = crossing()
+        table = ResourceTable()
+        first = plan_across(planner, table, robot_id=2, start=1, goal=2, at_ms=0)
+        table.replace_plan(first)
+        clear_at = region_window(first, 0).exit_ms + config.MARGIN_MS + 100
+        # Leaving late enough that the crossing is free: no wait is planned.
+        second = plan_across(planner, table, robot_id=3, start=3, goal=4, at_ms=clear_at)
+        lane_in = second.steps[1]
+        assert lane_in.exit_ms == region_window(second, 0).enter_ms
+        assert region_window(second, 0).enter_ms - clear_at == lane_in.exit_ms - lane_in.enter_ms
 
-    def test_the_same_table_gives_both_robots_opposite_answers(self) -> None:
-        """Appendix C's Theorem in miniature: exactly one of them may proceed."""
-        answers: dict[int, Outcome] = {}
-        for me, rival in ((2, 5), (5, 2)):
-            table = table_with(
-                junction=7, robot_id=rival, priority=10, arrival_ms=10_000
-            )
-            answers[me] = Arbiter(robot_id=me).arbitrate(
-                junction=7,
-                window=crossing_window(arrival_ms=10_000),
-                my_priority=10,
-                table=table,
-                can_absorb_shift=lambda _: True,
-                from_node=3,
-                to_node=8,
-            ).outcome
-        assert answers[2] is Outcome.RESERVE
-        assert answers[5].is_yield
+    def test_a_race_gives_both_robots_opposite_answers(self) -> None:
+        """Appendix C's Theorem in miniature: two plans committed in the same
+        millisecond, overlapping on the junction -- exactly one stands."""
+        _, _, planner = crossing()
+        mine = plan_across(planner, ResourceTable(), robot_id=2, start=1, goal=2, at_ms=0)
+        theirs = plan_across(planner, ResourceTable(), robot_id=5, start=3, goal=4, at_ms=0)
+        clash = conflict_between(mine, theirs, config.MARGIN_MS)
+        assert clash is not None and clash.kind == REGION
+        assert plan_precedence(mine, theirs) is True
+        assert plan_precedence(theirs, mine) is False
 
-    def test_priority_beats_identifier(self) -> None:
-        """BR-1: higher task priority takes precedence at a junction."""
-        table = table_with(junction=5, robot_id=1, priority=10, arrival_ms=10_000)
-        decision = Arbiter(robot_id=9).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_000),
-            my_priority=200,
-            table=table,
-            can_absorb_shift=lambda _: True,
-            from_node=3,
-            to_node=8,
-        )
-        assert decision.outcome is Outcome.RESERVE
+    def test_the_earlier_commit_stands(self) -> None:
+        """Committed first, stands first, whatever the rank -- the later committer
+        planned against a table that should have held the earlier plan."""
+        _, _, planner = crossing()
+        early = plan_across(planner, ResourceTable(), robot_id=9, start=1, goal=2, at_ms=0, priority=10, committed_ms=0)
+        late = plan_across(planner, ResourceTable(), robot_id=1, start=3, goal=4, at_ms=0, priority=200, committed_ms=5)
+        assert plan_precedence(early, late)
+        assert not plan_precedence(late, early)
 
-    def test_a_yield_sheds_speed_rather_than_braking(self) -> None:
-        """FR-5.6 / NFR-2.4: resolve by anticipation where anticipation suffices."""
-        table = table_with(junction=5, robot_id=1, priority=200, arrival_ms=10_000)
-        decision = Arbiter(robot_id=9).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_100),
-            my_priority=10,
-            table=table,
-            can_absorb_shift=lambda _: True,
-            from_node=3,
-            to_node=8,
-        )
-        assert decision.outcome is Outcome.YIELD_SLOW
+    def test_priority_beats_identifier_on_a_tie(self) -> None:
+        """BR-1: on the same fleet-clock millisecond, higher task priority stands."""
+        _, _, planner = crossing()
+        low = plan_across(planner, ResourceTable(), robot_id=1, start=1, goal=2, at_ms=0, priority=10)
+        high = plan_across(planner, ResourceTable(), robot_id=9, start=3, goal=4, at_ms=0, priority=200)
+        assert plan_precedence(high, low)
+        assert not plan_precedence(low, high)
 
-    def test_it_reroutes_when_slowing_cannot_absorb_the_shift(self) -> None:
-        """Appendix B's second AVOID branch."""
-        table = table_with(junction=5, robot_id=1, priority=200, arrival_ms=10_000)
-        decision = Arbiter(robot_id=9).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_100),
-            my_priority=10,
-            table=table,
-            can_absorb_shift=lambda _: False,
-            has_alternative_route=True,
-            from_node=3,
-            to_node=8,
-        )
-        assert decision.outcome is Outcome.YIELD_REPLAN
+    def test_the_loser_of_a_race_replans_after_the_winner(self) -> None:
+        """The race resolved, the loser's new plan books the junction after the
+        winner's window: the yield is a later window, not a slower crossing."""
+        _, _, planner = crossing()
+        winner = plan_across(planner, ResourceTable(), robot_id=2, start=1, goal=2, at_ms=0)
+        table = ResourceTable()
+        table.replace_plan(winner)
+        loser = plan_across(planner, table, robot_id=5, start=3, goal=4, at_ms=0, committed_ms=1)
+        assert region_window(loser, 0).enter_ms >= region_window(winner, 0).exit_ms + config.MARGIN_MS
 
-    def test_it_holds_when_neither_slowing_nor_rerouting_is_available(self) -> None:
-        """Not in Appendix B, and necessary: in a corridor with no bypass both of its
-        AVOID branches are unavailable and the procedure has nothing left to do. A
-        controlled stop is the only outcome that keeps FR-5.3's separation."""
-        table = table_with(junction=5, robot_id=1, priority=200, arrival_ms=10_000)
-        decision = Arbiter(robot_id=9).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_100),
-            my_priority=10,
-            table=table,
-            can_absorb_shift=lambda _: False,
-            has_alternative_route=False,
-            from_node=3,
-            to_node=8,
-        )
-        assert decision.outcome is Outcome.YIELD_HOLD
-
-    def test_low_confidence_declines_a_contested_junction(self) -> None:
-        """FR-5.14 / NFR-2.3: an AMR that cannot say where it is cannot promise when
-        it will be somewhere."""
-        table = table_with(junction=5, robot_id=1, priority=10, arrival_ms=10_000)
-        decision = Arbiter(robot_id=2).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_000),
-            my_priority=200,
-            table=table,
-            can_absorb_shift=lambda _: True,
-            position_confident=False,
-            from_node=3,
-            to_node=8,
-        )
-        assert decision.outcome is Outcome.BLOCKED_LOW_CONFIDENCE
-
-    def test_low_confidence_still_allows_an_uncontested_junction(self) -> None:
-        """FR-5.14 forbids *claiming a reservation* without confidence, not moving."""
-        decision = Arbiter(robot_id=2).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_000),
-            my_priority=10,
-            table=ReservationTable(),
-            can_absorb_shift=lambda _: True,
-            position_confident=False,
-        )
-        assert decision.outcome is Outcome.PROCEED
+    def test_the_arbiter_records_the_decision(self) -> None:
+        _, _, planner = crossing()
+        mine = plan_across(planner, ResourceTable(), robot_id=2, start=1, goal=2, at_ms=0)
+        theirs = plan_across(planner, ResourceTable(), robot_id=5, start=3, goal=4, at_ms=0)
+        arbiter = Arbiter(robot_id=2)
+        clash = conflict_between(mine, theirs, config.MARGIN_MS)
+        assert arbiter.resolve(mine, theirs, clash, now_ms=100) is True
+        assert arbiter.stood == 1 and arbiter.replanned == 0
+        assert arbiter.last is not None and arbiter.last.other_robot == 5
 
     def test_following_traffic_is_not_a_conflict(self) -> None:
-        """Two robots entering from the same side queue; they do not contend."""
-        table = table_with(
-            junction=5, robot_id=1, priority=200, arrival_ms=10_000,
-            from_node=3, to_node=8,
+        """Two robots entering from the same side queue; they do not contend for
+        the lane, only take turns in the junction, and the one behind never
+        leaves the lane before the one in front."""
+        _, _, planner = crossing()
+        table = ResourceTable()
+        leader = plan_across(planner, table, robot_id=1, start=1, goal=2, at_ms=0)
+        table.replace_plan(leader)
+        lane_leader = leader.steps[1]
+        # Already on the approach lane, a following gap behind the leader.
+        behind = Start(
+            0, lane_leader.exit_ms, waitable=True,
+            prefix_node=1, prefix_ms=lane_leader.enter_ms + config.FOLLOW_GAP_MS,
         )
-        decision = Arbiter(robot_id=9).arbitrate(
-            junction=5,
-            window=crossing_window(arrival_ms=10_000),
-            my_priority=10,
-            table=table,
-            can_absorb_shift=lambda _: True,
-            from_node=3,
-            to_node=8,
+        follower = planner.plan(
+            table, start=behind, goal=2, robot_id=2, priority=10, plan_seq=1,
+            committed_ms=config.FOLLOW_GAP_MS,
         )
-        assert decision.outcome is Outcome.PROCEED
+        assert follower is not None
+        assert conflict_between(leader, follower, config.MARGIN_MS) is None
+        lane_follower = follower.steps[0]
+        assert lane_follower.resource == lane_leader.resource
+        assert lane_follower.enter_ms > lane_leader.enter_ms
+        assert lane_follower.exit_ms >= lane_leader.exit_ms + config.FOLLOW_GAP_MS
+        assert region_window(follower, 0).enter_ms >= region_window(leader, 0).exit_ms + config.MARGIN_MS
 
     @pytest.mark.slow
     def test_repeated_crossings_produce_no_collisions(self) -> None:
@@ -412,9 +397,9 @@ class TestTC3CyclicConflict:
             sim.run(max_ms=1_800_000)
             traces.append(
                 [
-                    str(decision)
+                    (robot.robot_id, robot.plan_seq, robot.arbiter.stood, robot.arbiter.replanned)
                     for robot in sim.engine.robots
-                    for decision in robot.arbiter.history
                 ]
+                + [str(d) for robot in sim.engine.robots for d in robot.arbiter.decisions]
             )
         assert traces[0] == traces[1] == traces[2]

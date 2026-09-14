@@ -395,23 +395,27 @@ class TestWellFormedness:
 
 
 class TestConflictRegionsDoNotOverlap:
-    """Two junctions must sit at least 2 * JUNCTION_FOOTPRINT_MM apart.
+    """Two junctions must sit at least 2 * JUNCTION_FOOTPRINT_MM + 2 * HOLD_LINE_MM apart.
 
     A junction's conflict region reaches JUNCTION_FOOTPRINT_MM along every incident edge.
     Two regions that overlap would have to be one capacity-1 resource, and on a ring where
-    most anchors carry a bay that merges whole rows together. Keeping them apart is a
-    property of the map's spacing, and cheaper to hold than merging is to implement.
+    most anchors carry a bay that merges whole rows together. Beyond that, a robot waiting
+    for its turn stops HOLD_LINE_MM short of the next region, and that stop has to lie
+    outside the region behind it too -- with only 100 mm of lane between two regions the
+    waiting robot was still inside the one behind, and a robot turning through the
+    neighbouring junction passed 495 mm from it. Keeping them apart is a property of the
+    map's spacing, and cheaper to hold than merging is to implement.
     """
 
     @pytest.mark.parametrize("map_name", ALL_MAP_NAMES)
-    def test_adjacent_junctions_are_at_least_two_footprints_apart(self, map_name: str) -> None:
+    def test_adjacent_junctions_leave_room_for_a_hold_line(self, map_name: str) -> None:
         from core import config
 
         graph = Graph.load(MAPS_DIR / f"{map_name}.json")
-        need = 2 * config.JUNCTION_FOOTPRINT_MM
+        need = 2 * config.JUNCTION_FOOTPRINT_MM + 2 * config.HOLD_LINE_MM
         for edge in graph.edges.values():
             if graph.node(edge.u).is_junction and graph.node(edge.v).is_junction:
                 assert edge.length_mm >= need, (
                     f"{map_name}: junctions {edge.u} and {edge.v} are {edge.length_mm} mm "
-                    f"apart; their conflict regions overlap below {need}"
+                    f"apart; a robot holding for one would stand inside the other below {need}"
                 )

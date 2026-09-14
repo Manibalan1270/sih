@@ -255,34 +255,23 @@ class TestAgainstTheRealFleet:
                 "the 6-AMR wait-for cycle is back: " + report.describe()
             )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Per-junction arbitration on the well-formed benchmark map: 2 collisions at "
-            "6 AMRs (a corner off L_MID and a head-on in e4). Route-level reservation "
-            "(plan Step 4) replaces that arbitration; this must flip to a pass when it "
-            "lands. The 3-AMR graded gate is clean on this map."
-        ),
-    )
     def test_six_robots_do_the_work_without_colliding(self) -> None:
-        """Collisions are the part that must hold. Completion at this fleet size is
-        limited by the map rather than by coordination: benchmark_map has three parking
-        bays, so six robots cannot all stand somewhere harmless, and a fleet with nowhere
-        to idle is the capacity constraint that deadlock-free lane routing assumes away
-        (every lane keeping room for one more agent). bench3 is a three-robot scenario;
-        this exercises the safety layer above its intended density, not its throughput.
+        """Twice bench3's design density on its own map. Under per-junction
+        arbitration this collided twice (a corner off L_MID and a head-on in e4) and
+        was carried as a strict xfail; route-level reservation executed by
+        precedence is what flipped it. The map has a bay per robot, so completion is
+        expected too, not only safety.
         """
         sim = self.build_six()
         for _ in range(60_000):
             sim.step()
             if sim.is_finished:
                 break
-        assert not sim.engine.coordination_failures, (
-            f"{len(sim.engine.coordination_failures)} collisions at 6 AMRs"
+        assert not sim.engine.collisions, (
+            f"{len(sim.engine.collisions)} collisions at 6 AMRs"
         )
-        assert len(sim.completed) >= 20, (
-            f"only {len(sim.completed)} of {len(sim.task_set)} tasks done; throughput "
-            f"has collapsed even allowing for the bay shortage"
+        assert len(sim.completed) == len(sim.task_set), (
+            f"only {len(sim.completed)} of {len(sim.task_set)} tasks done"
         )
 
 

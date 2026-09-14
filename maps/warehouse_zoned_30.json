@@ -22,7 +22,7 @@
   {
    "id": 1,
    "name": "C01R00",
-   "x": 5000,
+   "x": 6000,
    "y": 0,
    "marker": true,
    "zone": 0,
@@ -31,7 +31,7 @@
   {
    "id": 2,
    "name": "C02R00",
-   "x": 10000,
+   "x": 12000,
    "y": 0,
    "marker": true,
    "zone": 0,
@@ -40,7 +40,7 @@
   {
    "id": 3,
    "name": "C03R00",
-   "x": 15000,
+   "x": 18000,
    "y": 0,
    "marker": true,
    "zone": 0,
@@ -49,7 +49,7 @@
   {
    "id": 4,
    "name": "C04R00",
-   "x": 20000,
+   "x": 24000,
    "y": 0,
    "marker": true,
    "zone": 1
@@ -57,7 +57,7 @@
   {
    "id": 5,
    "name": "C05R00",
-   "x": 25000,
+   "x": 30000,
    "y": 0,
    "marker": true,
    "zone": 1
@@ -65,7 +65,7 @@
   {
    "id": 6,
    "name": "C06R00",
-   "x": 30000,
+   "x": 36000,
    "y": 0,
    "marker": true,
    "zone": 1
@@ -73,7 +73,7 @@
   {
    "id": 7,
    "name": "C07R00",
-   "x": 35000,
+   "x": 42000,
    "y": 0,
    "marker": true,
    "zone": 1,
@@ -82,7 +82,7 @@
   {
    "id": 8,
    "name": "C08R00",
-   "x": 40000,
+   "x": 48000,
    "y": 0,
    "marker": true,
    "zone": 2,
@@ -91,7 +91,7 @@
   {
    "id": 9,
    "name": "C09R00",
-   "x": 45000,
+   "x": 54000,
    "y": 0,
    "marker": true,
    "zone": 2,
@@ -100,7 +100,7 @@
   {
    "id": 10,
    "name": "C10R00",
-   "x": 50000,
+   "x": 60000,
    "y": 0,
    "marker": true,
    "zone": 2,
@@ -109,7 +109,7 @@
   {
    "id": 11,
    "name": "C11R00",
-   "x": 55000,
+   "x": 66000,
    "y": 0,
    "marker": true,
    "zone": 2,
@@ -119,7 +119,7 @@
    "id": 12,
    "name": "C00R01",
    "x": 0,
-   "y": 5000,
+   "y": 6000,
    "marker": true,
    "zone": 0,
    "junction": true
@@ -127,88 +127,88 @@
   {
    "id": 13,
    "name": "C01R01",
-   "x": 5000,
-   "y": 5000,
+   "x": 6000,
+   "y": 6000,
    "marker": true,
    "zone": 0
   },
   {
    "id": 14,
    "name": "C02R01",
-   "x": 10000,
-   "y": 5000,
+   "x": 12000,
+   "y": 6000,
    "marker": true,
    "zone": 0
   },
   {
    "id": 15,
    "name": "C03R01",
-   "x": 15000,
-   "y": 5000,
+   "x": 18000,
+   "y": 6000,
    "marker": true,
    "zone": 0
   },
   {
    "id": 16,
    "name": "C04R01",
-   "x": 20000,
-   "y": 5000,
+   "x": 24000,
+   "y": 6000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 17,
    "name": "C05R01",
-   "x": 25000,
-   "y": 5000,
+   "x": 30000,
+   "y": 6000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 18,
    "name": "C06R01",
-   "x": 30000,
-   "y": 5000,
+   "x": 36000,
+   "y": 6000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 19,
    "name": "C07R01",
-   "x": 35000,
-   "y": 5000,
+   "x": 42000,
+   "y": 6000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 20,
    "name": "C08R01",
-   "x": 40000,
-   "y": 5000,
+   "x": 48000,
+   "y": 6000,
    "marker": true,
    "zone": 2
   },
   {
    "id": 21,
    "name": "C09R01",
-   "x": 45000,
-   "y": 5000,
+   "x": 54000,
+   "y": 6000,
    "marker": true,
    "zone": 2
   },
   {
    "id": 22,
    "name": "C10R01",
-   "x": 50000,
-   "y": 5000,
+   "x": 60000,
+   "y": 6000,
    "marker": true,
    "zone": 2
   },
   {
    "id": 23,
    "name": "C11R01",
-   "x": 55000,
-   "y": 5000,
+   "x": 66000,
+   "y": 6000,
    "marker": true,
    "zone": 2,
    "junction": true
@@ -217,7 +217,7 @@
    "id": 24,
    "name": "C00R02",
    "x": 0,
-   "y": 10000,
+   "y": 12000,
    "marker": true,
    "zone": 0,
    "junction": true
@@ -225,88 +225,88 @@
   {
    "id": 25,
    "name": "C01R02",
-   "x": 5000,
-   "y": 10000,
+   "x": 6000,
+   "y": 12000,
    "marker": true,
    "zone": 0
   },
   {
    "id": 26,
    "name": "C02R02",
-   "x": 10000,
-   "y": 10000,
+   "x": 12000,
+   "y": 12000,
    "marker": true,
    "zone": 0
   },
   {
    "id": 27,
    "name": "C03R02",
-   "x": 15000,
-   "y": 10000,
+   "x": 18000,
+   "y": 12000,
    "marker": true,
    "zone": 0
   },
   {
    "id": 28,
    "name": "C04R02",
-   "x": 20000,
-   "y": 10000,
+   "x": 24000,
+   "y": 12000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 29,
    "name": "C05R02",
-   "x": 25000,
-   "y": 10000,
+   "x": 30000,
+   "y": 12000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 30,
    "name": "C06R02",
-   "x": 30000,
-   "y": 10000,
+   "x": 36000,
+   "y": 12000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 31,
    "name": "C07R02",
-   "x": 35000,
-   "y": 10000,
+   "x": 42000,
+   "y": 12000,
    "marker": true,
    "zone": 1
   },
   {
    "id": 32,
    "name": "C08R02",
-   "x": 40000,
-   "y": 10000,
+   "x": 48000,
+   "y": 12000,
    "marker": true,
    "zone": 2
   },
   {
    "id": 33,
    "name": "C09R02",
-   "x": 45000,
-   "y": 10000,
+   "x": 54000,
+   "y": 12000,
    "marker": true,
    "zone": 2
   },
   {
    "id": 34,
    "name": "C10R02",
-   "x": 50000,
-   "y": 10000,
+   "x": 60000,
+   "y": 12000,
    "marker": true,
    "zone": 2
   },
   {
    "id": 35,
    "name": "C11R02",
-   "x": 55000,
-   "y": 10000,
+   "x": 66000,
+   "y": 12000,
    "marker": true,
    "zone": 2,
    "junction": true
@@ -315,7 +315,7 @@
    "id": 36,
    "name": "C00R03",
    "x": 0,
-   "y": 15000,
+   "y": 18000,
    "marker": true,
    "zone": 3,
    "junction": true
@@ -323,88 +323,88 @@
   {
    "id": 37,
    "name": "C01R03",
-   "x": 5000,
-   "y": 15000,
+   "x": 6000,
+   "y": 18000,
    "marker": true,
    "zone": 3
   },
   {
    "id": 38,
    "name": "C02R03",
-   "x": 10000,
-   "y": 15000,
+   "x": 12000,
+   "y": 18000,
    "marker": true,
    "zone": 3
   },
   {
    "id": 39,
    "name": "C03R03",
-   "x": 15000,
-   "y": 15000,
+   "x": 18000,
+   "y": 18000,
    "marker": true,
    "zone": 3
   },
   {
    "id": 40,
    "name": "C04R03",
-   "x": 20000,
-   "y": 15000,
+   "x": 24000,
+   "y": 18000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 41,
    "name": "C05R03",
-   "x": 25000,
-   "y": 15000,
+   "x": 30000,
+   "y": 18000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 42,
    "name": "C06R03",
-   "x": 30000,
-   "y": 15000,
+   "x": 36000,
+   "y": 18000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 43,
    "name": "C07R03",
-   "x": 35000,
-   "y": 15000,
+   "x": 42000,
+   "y": 18000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 44,
    "name": "C08R03",
-   "x": 40000,
-   "y": 15000,
+   "x": 48000,
+   "y": 18000,
    "marker": true,
    "zone": 5
   },
   {
    "id": 45,
    "name": "C09R03",
-   "x": 45000,
-   "y": 15000,
+   "x": 54000,
+   "y": 18000,
    "marker": true,
    "zone": 5
   },
   {
    "id": 46,
    "name": "C10R03",
-   "x": 50000,
-   "y": 15000,
+   "x": 60000,
+   "y": 18000,
    "marker": true,
    "zone": 5
   },
   {
    "id": 47,
    "name": "C11R03",
-   "x": 55000,
-   "y": 15000,
+   "x": 66000,
+   "y": 18000,
    "marker": true,
    "zone": 5,
    "junction": true
@@ -413,7 +413,7 @@
    "id": 48,
    "name": "C00R04",
    "x": 0,
-   "y": 20000,
+   "y": 24000,
    "marker": true,
    "zone": 3,
    "junction": true
@@ -421,88 +421,88 @@
   {
    "id": 49,
    "name": "C01R04",
-   "x": 5000,
-   "y": 20000,
+   "x": 6000,
+   "y": 24000,
    "marker": true,
    "zone": 3
   },
   {
    "id": 50,
    "name": "C02R04",
-   "x": 10000,
-   "y": 20000,
+   "x": 12000,
+   "y": 24000,
    "marker": true,
    "zone": 3
   },
   {
    "id": 51,
    "name": "C03R04",
-   "x": 15000,
-   "y": 20000,
+   "x": 18000,
+   "y": 24000,
    "marker": true,
    "zone": 3
   },
   {
    "id": 52,
    "name": "C04R04",
-   "x": 20000,
-   "y": 20000,
+   "x": 24000,
+   "y": 24000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 53,
    "name": "C05R04",
-   "x": 25000,
-   "y": 20000,
+   "x": 30000,
+   "y": 24000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 54,
    "name": "C06R04",
-   "x": 30000,
-   "y": 20000,
+   "x": 36000,
+   "y": 24000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 55,
    "name": "C07R04",
-   "x": 35000,
-   "y": 20000,
+   "x": 42000,
+   "y": 24000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 56,
    "name": "C08R04",
-   "x": 40000,
-   "y": 20000,
+   "x": 48000,
+   "y": 24000,
    "marker": true,
    "zone": 5
   },
   {
    "id": 57,
    "name": "C09R04",
-   "x": 45000,
-   "y": 20000,
+   "x": 54000,
+   "y": 24000,
    "marker": true,
    "zone": 5
   },
   {
    "id": 58,
    "name": "C10R04",
-   "x": 50000,
-   "y": 20000,
+   "x": 60000,
+   "y": 24000,
    "marker": true,
    "zone": 5
   },
   {
    "id": 59,
    "name": "C11R04",
-   "x": 55000,
-   "y": 20000,
+   "x": 66000,
+   "y": 24000,
    "marker": true,
    "zone": 5,
    "junction": true
@@ -511,7 +511,7 @@
    "id": 60,
    "name": "C00R05",
    "x": 0,
-   "y": 25000,
+   "y": 30000,
    "marker": true,
    "zone": 3,
    "junction": true
@@ -519,8 +519,8 @@
   {
    "id": 61,
    "name": "C01R05",
-   "x": 5000,
-   "y": 25000,
+   "x": 6000,
+   "y": 30000,
    "marker": true,
    "zone": 3,
    "junction": true
@@ -528,8 +528,8 @@
   {
    "id": 62,
    "name": "C02R05",
-   "x": 10000,
-   "y": 25000,
+   "x": 12000,
+   "y": 30000,
    "marker": true,
    "zone": 3,
    "junction": true
@@ -537,8 +537,8 @@
   {
    "id": 63,
    "name": "C03R05",
-   "x": 15000,
-   "y": 25000,
+   "x": 18000,
+   "y": 30000,
    "marker": true,
    "zone": 3,
    "junction": true
@@ -546,8 +546,8 @@
   {
    "id": 64,
    "name": "C04R05",
-   "x": 20000,
-   "y": 25000,
+   "x": 24000,
+   "y": 30000,
    "marker": true,
    "zone": 4,
    "junction": true
@@ -555,32 +555,32 @@
   {
    "id": 65,
    "name": "C05R05",
-   "x": 25000,
-   "y": 25000,
+   "x": 30000,
+   "y": 30000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 66,
    "name": "C06R05",
-   "x": 30000,
-   "y": 25000,
+   "x": 36000,
+   "y": 30000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 67,
    "name": "C07R05",
-   "x": 35000,
-   "y": 25000,
+   "x": 42000,
+   "y": 30000,
    "marker": true,
    "zone": 4
   },
   {
    "id": 68,
    "name": "C08R05",
-   "x": 40000,
-   "y": 25000,
+   "x": 48000,
+   "y": 30000,
    "marker": true,
    "zone": 5,
    "junction": true
@@ -588,8 +588,8 @@
   {
    "id": 69,
    "name": "C09R05",
-   "x": 45000,
-   "y": 25000,
+   "x": 54000,
+   "y": 30000,
    "marker": true,
    "zone": 5,
    "junction": true
@@ -597,8 +597,8 @@
   {
    "id": 70,
    "name": "C10R05",
-   "x": 50000,
-   "y": 25000,
+   "x": 60000,
+   "y": 30000,
    "marker": true,
    "zone": 5,
    "junction": true
@@ -606,8 +606,8 @@
   {
    "id": 71,
    "name": "C11R05",
-   "x": 55000,
-   "y": 25000,
+   "x": 66000,
+   "y": 30000,
    "marker": true,
    "zone": 5,
    "junction": true
@@ -615,7 +615,7 @@
   {
    "id": 72,
    "name": "M000_001",
-   "x": 2500,
+   "x": 3000,
    "y": 0,
    "marker": true,
    "junction": true,
@@ -624,7 +624,7 @@
   {
    "id": 73,
    "name": "M001_002",
-   "x": 7500,
+   "x": 9000,
    "y": 0,
    "marker": true,
    "junction": false,
@@ -633,7 +633,7 @@
   {
    "id": 74,
    "name": "M002_003",
-   "x": 12500,
+   "x": 15000,
    "y": 0,
    "marker": true,
    "junction": false,
@@ -642,7 +642,7 @@
   {
    "id": 75,
    "name": "M003_004",
-   "x": 17500,
+   "x": 21000,
    "y": 0,
    "marker": true,
    "junction": true,
@@ -651,7 +651,7 @@
   {
    "id": 76,
    "name": "M004_005",
-   "x": 22500,
+   "x": 27000,
    "y": 0,
    "marker": true,
    "junction": true,
@@ -660,7 +660,7 @@
   {
    "id": 77,
    "name": "M005_006",
-   "x": 27500,
+   "x": 33000,
    "y": 0,
    "marker": true,
    "junction": true,
@@ -669,7 +669,7 @@
   {
    "id": 78,
    "name": "M006_007",
-   "x": 32500,
+   "x": 39000,
    "y": 0,
    "marker": true,
    "junction": true,
@@ -678,7 +678,7 @@
   {
    "id": 79,
    "name": "M007_008",
-   "x": 37500,
+   "x": 45000,
    "y": 0,
    "marker": true,
    "junction": false,
@@ -687,7 +687,7 @@
   {
    "id": 80,
    "name": "M008_009",
-   "x": 42500,
+   "x": 51000,
    "y": 0,
    "marker": true,
    "junction": false,
@@ -696,7 +696,7 @@
   {
    "id": 81,
    "name": "M009_010",
-   "x": 47500,
+   "x": 57000,
    "y": 0,
    "marker": true,
    "junction": false,
@@ -705,7 +705,7 @@
   {
    "id": 82,
    "name": "M010_011",
-   "x": 52500,
+   "x": 63000,
    "y": 0,
    "marker": true,
    "junction": true,
@@ -714,8 +714,8 @@
   {
    "id": 83,
    "name": "M060_061",
-   "x": 2500,
-   "y": 25000,
+   "x": 3000,
+   "y": 30000,
    "marker": true,
    "junction": true,
    "zone": 3
@@ -723,8 +723,8 @@
   {
    "id": 84,
    "name": "M061_062",
-   "x": 7500,
-   "y": 25000,
+   "x": 9000,
+   "y": 30000,
    "marker": true,
    "junction": false,
    "zone": 3
@@ -732,8 +732,8 @@
   {
    "id": 85,
    "name": "M062_063",
-   "x": 12500,
-   "y": 25000,
+   "x": 15000,
+   "y": 30000,
    "marker": true,
    "junction": false,
    "zone": 3
@@ -741,8 +741,8 @@
   {
    "id": 86,
    "name": "M063_064",
-   "x": 17500,
-   "y": 25000,
+   "x": 21000,
+   "y": 30000,
    "marker": true,
    "junction": false,
    "zone": 3
@@ -750,8 +750,8 @@
   {
    "id": 87,
    "name": "M064_065",
-   "x": 22500,
-   "y": 25000,
+   "x": 27000,
+   "y": 30000,
    "marker": true,
    "junction": true,
    "zone": 4
@@ -759,8 +759,8 @@
   {
    "id": 88,
    "name": "M065_066",
-   "x": 27500,
-   "y": 25000,
+   "x": 33000,
+   "y": 30000,
    "marker": true,
    "junction": true,
    "zone": 4
@@ -768,8 +768,8 @@
   {
    "id": 89,
    "name": "M066_067",
-   "x": 32500,
-   "y": 25000,
+   "x": 39000,
+   "y": 30000,
    "marker": true,
    "junction": true,
    "zone": 4
@@ -777,8 +777,8 @@
   {
    "id": 90,
    "name": "M067_068",
-   "x": 37500,
-   "y": 25000,
+   "x": 45000,
+   "y": 30000,
    "marker": true,
    "junction": true,
    "zone": 4
@@ -786,8 +786,8 @@
   {
    "id": 91,
    "name": "M068_069",
-   "x": 42500,
-   "y": 25000,
+   "x": 51000,
+   "y": 30000,
    "marker": true,
    "junction": false,
    "zone": 5
@@ -795,8 +795,8 @@
   {
    "id": 92,
    "name": "M069_070",
-   "x": 47500,
-   "y": 25000,
+   "x": 57000,
+   "y": 30000,
    "marker": true,
    "junction": false,
    "zone": 5
@@ -804,8 +804,8 @@
   {
    "id": 93,
    "name": "M070_071",
-   "x": 52500,
-   "y": 25000,
+   "x": 63000,
+   "y": 30000,
    "marker": true,
    "junction": true,
    "zone": 5
@@ -814,7 +814,7 @@
    "id": 94,
    "name": "M000_012",
    "x": 0,
-   "y": 2500,
+   "y": 3000,
    "marker": true,
    "junction": false,
    "zone": 0
@@ -823,7 +823,7 @@
    "id": 95,
    "name": "M012_024",
    "x": 0,
-   "y": 7500,
+   "y": 9000,
    "marker": true,
    "junction": true,
    "zone": 0
@@ -832,7 +832,7 @@
    "id": 96,
    "name": "M024_036",
    "x": 0,
-   "y": 12500,
+   "y": 15000,
    "marker": true,
    "junction": false,
    "zone": 0
@@ -841,7 +841,7 @@
    "id": 97,
    "name": "M036_048",
    "x": 0,
-   "y": 17500,
+   "y": 21000,
    "marker": true,
    "junction": true,
    "zone": 3
@@ -850,7 +850,7 @@
    "id": 98,
    "name": "M048_060",
    "x": 0,
-   "y": 22500,
+   "y": 27000,
    "marker": true,
    "junction": false,
    "zone": 3
@@ -858,8 +858,8 @@
   {
    "id": 99,
    "name": "M011_023",
-   "x": 55000,
-   "y": 2500,
+   "x": 66000,
+   "y": 3000,
    "marker": true,
    "junction": false,
    "zone": 2
@@ -867,8 +867,8 @@
   {
    "id": 100,
    "name": "M023_035",
-   "x": 55000,
-   "y": 7500,
+   "x": 66000,
+   "y": 9000,
    "marker": true,
    "junction": true,
    "zone": 2
@@ -876,8 +876,8 @@
   {
    "id": 101,
    "name": "M035_047",
-   "x": 55000,
-   "y": 12500,
+   "x": 66000,
+   "y": 15000,
    "marker": true,
    "junction": false,
    "zone": 2
@@ -885,8 +885,8 @@
   {
    "id": 102,
    "name": "M047_059",
-   "x": 55000,
-   "y": 17500,
+   "x": 66000,
+   "y": 21000,
    "marker": true,
    "junction": true,
    "zone": 5
@@ -894,8 +894,8 @@
   {
    "id": 103,
    "name": "M059_071",
-   "x": 55000,
-   "y": 22500,
+   "x": 66000,
+   "y": 27000,
    "marker": true,
    "junction": false,
    "zone": 5
@@ -903,7 +903,7 @@
   {
    "id": 104,
    "name": "PICK00",
-   "x": -2500,
+   "x": -3000,
    "y": 0,
    "junction": false,
    "marker": true,
@@ -912,8 +912,8 @@
   {
    "id": 105,
    "name": "PICK01",
-   "x": -2500,
-   "y": 5000,
+   "x": -3000,
+   "y": 6000,
    "junction": false,
    "marker": true,
    "zone": 0
@@ -921,8 +921,8 @@
   {
    "id": 106,
    "name": "PICK02",
-   "x": -2500,
-   "y": 10000,
+   "x": -3000,
+   "y": 12000,
    "junction": false,
    "marker": true,
    "zone": 0
@@ -930,8 +930,8 @@
   {
    "id": 107,
    "name": "PICK03",
-   "x": -2500,
-   "y": 15000,
+   "x": -3000,
+   "y": 18000,
    "junction": false,
    "marker": true,
    "zone": 3
@@ -939,8 +939,8 @@
   {
    "id": 108,
    "name": "PICK04",
-   "x": -2500,
-   "y": 20000,
+   "x": -3000,
+   "y": 24000,
    "junction": false,
    "marker": true,
    "zone": 3
@@ -948,8 +948,8 @@
   {
    "id": 109,
    "name": "PICK05",
-   "x": -2500,
-   "y": 25000,
+   "x": -3000,
+   "y": 30000,
    "junction": false,
    "marker": true,
    "zone": 3
@@ -957,7 +957,7 @@
   {
    "id": 110,
    "name": "DROP00",
-   "x": 57500,
+   "x": 69000,
    "y": 0,
    "junction": false,
    "marker": true,
@@ -966,8 +966,8 @@
   {
    "id": 111,
    "name": "DROP01",
-   "x": 57500,
-   "y": 5000,
+   "x": 69000,
+   "y": 6000,
    "junction": false,
    "marker": true,
    "zone": 2
@@ -975,8 +975,8 @@
   {
    "id": 112,
    "name": "DROP02",
-   "x": 57500,
-   "y": 10000,
+   "x": 69000,
+   "y": 12000,
    "junction": false,
    "marker": true,
    "zone": 2
@@ -984,8 +984,8 @@
   {
    "id": 113,
    "name": "DROP03",
-   "x": 57500,
-   "y": 15000,
+   "x": 69000,
+   "y": 18000,
    "junction": false,
    "marker": true,
    "zone": 5
@@ -993,8 +993,8 @@
   {
    "id": 114,
    "name": "DROP04",
-   "x": 57500,
-   "y": 20000,
+   "x": 69000,
+   "y": 24000,
    "junction": false,
    "marker": true,
    "zone": 5
@@ -1002,8 +1002,8 @@
   {
    "id": 115,
    "name": "DROP05",
-   "x": 57500,
-   "y": 25000,
+   "x": 69000,
+   "y": 30000,
    "junction": false,
    "marker": true,
    "zone": 5
@@ -1011,8 +1011,8 @@
   {
    "id": 116,
    "name": "BAY000",
-   "x": 2500,
-   "y": -2500,
+   "x": 3000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 0,
@@ -1022,8 +1022,8 @@
   {
    "id": 117,
    "name": "BAY001",
-   "x": 5000,
-   "y": -2500,
+   "x": 6000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 0,
@@ -1033,8 +1033,8 @@
   {
    "id": 118,
    "name": "BAY002",
-   "x": 10000,
-   "y": -2500,
+   "x": 12000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 0,
@@ -1044,8 +1044,8 @@
   {
    "id": 119,
    "name": "BAY003",
-   "x": 15000,
-   "y": -2500,
+   "x": 18000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 0,
@@ -1055,8 +1055,8 @@
   {
    "id": 120,
    "name": "BAY004",
-   "x": 17500,
-   "y": -2500,
+   "x": 21000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 0,
@@ -1066,8 +1066,8 @@
   {
    "id": 121,
    "name": "BAY005",
-   "x": 22500,
-   "y": -2500,
+   "x": 27000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 1,
@@ -1077,8 +1077,8 @@
   {
    "id": 122,
    "name": "BAY006",
-   "x": 27500,
-   "y": -2500,
+   "x": 33000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 1,
@@ -1088,8 +1088,8 @@
   {
    "id": 123,
    "name": "BAY007",
-   "x": 32500,
-   "y": -2500,
+   "x": 39000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 1,
@@ -1099,8 +1099,8 @@
   {
    "id": 124,
    "name": "BAY008",
-   "x": 35000,
-   "y": -2500,
+   "x": 42000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 1,
@@ -1110,8 +1110,8 @@
   {
    "id": 125,
    "name": "BAY009",
-   "x": 40000,
-   "y": -2500,
+   "x": 48000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 2,
@@ -1121,8 +1121,8 @@
   {
    "id": 126,
    "name": "BAY010",
-   "x": 45000,
-   "y": -2500,
+   "x": 54000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 2,
@@ -1132,8 +1132,8 @@
   {
    "id": 127,
    "name": "BAY011",
-   "x": 50000,
-   "y": -2500,
+   "x": 60000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 2,
@@ -1143,8 +1143,8 @@
   {
    "id": 128,
    "name": "BAY012",
-   "x": 52500,
-   "y": -2500,
+   "x": 63000,
+   "y": -3000,
    "junction": false,
    "marker": true,
    "zone": 2,
@@ -1154,8 +1154,8 @@
   {
    "id": 129,
    "name": "BAY013",
-   "x": 57500,
-   "y": 7500,
+   "x": 69000,
+   "y": 9000,
    "junction": false,
    "marker": true,
    "zone": 2,
@@ -1165,8 +1165,8 @@
   {
    "id": 130,
    "name": "BAY014",
-   "x": 57500,
-   "y": 17500,
+   "x": 69000,
+   "y": 21000,
    "junction": false,
    "marker": true,
    "zone": 5,
@@ -1176,8 +1176,8 @@
   {
    "id": 131,
    "name": "BAY015",
-   "x": 52500,
-   "y": 27500,
+   "x": 63000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 5,
@@ -1187,8 +1187,8 @@
   {
    "id": 132,
    "name": "BAY016",
-   "x": 50000,
-   "y": 27500,
+   "x": 60000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 5,
@@ -1198,8 +1198,8 @@
   {
    "id": 133,
    "name": "BAY017",
-   "x": 45000,
-   "y": 27500,
+   "x": 54000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 5,
@@ -1209,8 +1209,8 @@
   {
    "id": 134,
    "name": "BAY018",
-   "x": 40000,
-   "y": 27500,
+   "x": 48000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 5,
@@ -1220,8 +1220,8 @@
   {
    "id": 135,
    "name": "BAY019",
-   "x": 37500,
-   "y": 27500,
+   "x": 45000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 4,
@@ -1231,8 +1231,8 @@
   {
    "id": 136,
    "name": "BAY020",
-   "x": 32500,
-   "y": 27500,
+   "x": 39000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 4,
@@ -1242,8 +1242,8 @@
   {
    "id": 137,
    "name": "BAY021",
-   "x": 27500,
-   "y": 27500,
+   "x": 33000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 4,
@@ -1253,8 +1253,8 @@
   {
    "id": 138,
    "name": "BAY022",
-   "x": 22500,
-   "y": 27500,
+   "x": 27000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 4,
@@ -1264,8 +1264,8 @@
   {
    "id": 139,
    "name": "BAY023",
-   "x": 20000,
-   "y": 27500,
+   "x": 24000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 4,
@@ -1275,8 +1275,8 @@
   {
    "id": 140,
    "name": "BAY024",
-   "x": 15000,
-   "y": 27500,
+   "x": 18000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 3,
@@ -1286,8 +1286,8 @@
   {
    "id": 141,
    "name": "BAY025",
-   "x": 10000,
-   "y": 27500,
+   "x": 12000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 3,
@@ -1297,8 +1297,8 @@
   {
    "id": 142,
    "name": "BAY026",
-   "x": 5000,
-   "y": 27500,
+   "x": 6000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 3,
@@ -1308,8 +1308,8 @@
   {
    "id": 143,
    "name": "BAY027",
-   "x": 2500,
-   "y": 27500,
+   "x": 3000,
+   "y": 33000,
    "junction": false,
    "marker": true,
    "zone": 3,
@@ -1319,8 +1319,8 @@
   {
    "id": 144,
    "name": "BAY028",
-   "x": -2500,
-   "y": 17500,
+   "x": -3000,
+   "y": 21000,
    "junction": false,
    "marker": true,
    "zone": 3,
@@ -1330,8 +1330,8 @@
   {
    "id": 145,
    "name": "BAY029",
-   "x": -2500,
-   "y": 7500,
+   "x": -3000,
+   "y": 9000,
    "junction": false,
    "marker": true,
    "zone": 0,

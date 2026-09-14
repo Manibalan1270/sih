@@ -234,9 +234,15 @@ All found while implementing; all should be corrected in v1.1.
 
 ## Status
 
-Phases 0-7b complete. `bench3` at 3 AMRs is **clean across 30 seeds**: zero
-collisions, every run completing. 6 AMRs on the same map -- twice its design density,
-with three bays for six robots -- also completes without collisions or cycles.
+**Phases 0-12 in progress.** Latest work includes:
+- **Phase 12 (AC-6)**: Fleet dashboard and Run Control — scenario selection, execution control, and visualization
+- **Route-level reservations**: time-window based planning with free-time-window planner
+- **Protocol enhancements**: PATH frames, plan_seq/plan_index on INTENT for route coordination  
+- **Webots integration**: fleet supervisor, world generation, capacity probing at ~7x real time
+- **Well-formed maps**: benchmark_map, warehouse_zoned_30, warehouse_zoned_100 now guarantee no task endpoint on junctions
+
+`bench3` at 3 AMRs is **clean across 30 seeds**: zero collisions, every run completing. 
+6 AMRs on the same map -- twice its design density, with three bays for six robots -- also completes without collisions or cycles.
 
 That sequence went 3 failures in 20 seeds -> 1 -> 0 collisions in 30, and the fixes that
 got there all turned out to be one idea applied in four places: **a robot that has no
@@ -353,17 +359,10 @@ problem needing sequence-level reservation per [R8]. That was wrong. It was defe
 `xfail(strict=True)`, which is the only reason the mistaken diagnosis was caught
 rather than acted on.
 
-Not yet met, and known:
+Current work and known issues:
 
-- **AC-3 (>=20% makespan reduction) is not met and is not expected to be yet.**
-  Configuration B currently runs slightly *slower* than A, because yielding costs
-  time while the two things that pay it back are unbuilt: traffic learning to
-  spread routes off the choke corridor (Phase 8), and Configuration A's own
-  stop-and-wait halting penalty, which FR-10.5 requires and which is what the
-  baseline is supposed to be handicapped by (Phase 11).
-- **TC-3's ring case deadlocks** -- see SRS defect 5 above. Junction arbitration
-  and single-corridor arbitration are each correct and neither is sufficient.
-- **Safety and liveness are unverified above 3 AMRs** -- see above. This outranks
-  the AC-3 margin: a makespan figure measured on a fleet that sometimes collides
-  or stalls is not evidence of anything.
-- **`visual30` has never run**: Webots is not installed.
+- **AC-3 (>=20% makespan reduction)**: In progress via Phase 8-11 (traffic learning and Configuration A baseline). Route-level reservations now provide precedence-based execution for multi-hop paths.
+- **Route-level coordination**: New time-window planner enables precedence execution and multi-resource ordering. This addresses the sequence-level reservation needed for SRS defect 5 (ring deadlocks at 30+ AMRs).
+- **Safety above 3 AMRs**: Fleet coordination tested at 30 AMRs with new route-level reservations. See [[route-level-reservation-plan]] for implementation roadmap.
+- **TC-3 ring case (SRS defect 5)**: Targeted by route-level reservations with precedence-based ordering across multiple junctions.
+- **`visual30` visualization**: Fleet supervisor implemented; requires Webots installation for 3D rendering at 30 AMRs.

@@ -104,6 +104,28 @@ less than this."""
 MARGIN_DEGRADED_MS = 1500
 """FR-5.13 / FR-7.6: widened margin once the clock beacon is stale."""
 
+SETTLE_MS = 400
+"""A freshly committed route plan may not carry its robot into a junction region or
+corridor until it has stood this long. Two INTENT periods: long enough for every
+peer in range to have heard the PATH (mesh latency plus INTENT_TOLERANCE_MS) and to
+have objected -- a race on a resource is settled by committed_ms and the loser
+replans -- before the plan is acted on where a collision could happen."""
+
+REPLAN_SLACK_MS = 4000
+"""How far behind its own plan a robot may fall before it re-books. Its own
+entry is gated by order, not time, so lateness is safe for it -- but a timetable
+in the past misleads every peer planning around it, and a fresh plan against the
+current table also routes around what has built up meanwhile."""
+
+HOLD_LINE_MM = 200
+"""How far outside a resource boundary a robot stops when it may not yet enter:
+between the boundary (JUNCTION_FOOTPRINT_MM from the node) and YIELD_STANDOFF_MM.
+Wide enough to stop in from yield speed within one tick's travel margin."""
+
+APPROACH_SLOW_MM = 3000
+"""From this far short of a boundary it may not yet cross, a robot approaches at
+YIELD_SPEED_MM_S rather than nominal (FR-5.6: shed speed before braking)."""
+
 # ---------------------------------------------------------------------------
 # Latency budgets (section 5.1) -- asserted by tests, not enforced at run time
 # ---------------------------------------------------------------------------

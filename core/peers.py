@@ -31,6 +31,13 @@ class Peer:
     held_task_id: int = -1
     intents_received: int = 0
 
+    plan_seq: int = 0
+    plan_index: int = 0
+    """Which route plan the peer says is in force, and how many of its steps it has
+    released (see communication.messages.Path). Execution by precedence reads these:
+    a robot waiting to enter a resource checks that everyone booked ahead of it there
+    has a plan_index past that step. Zero plan_seq means no plan."""
+
     next_nodes: tuple[int, ...] = ()
     eta_ms: tuple[int, ...] = ()
     """The peer's declared route horizon and arrival times, rebased onto the aligned
@@ -130,6 +137,8 @@ class PeerTable:
         held_task_id: int,
         next_nodes: tuple[int, ...] = (),
         eta_ms: tuple[int, ...] = (),
+        plan_seq: int = 0,
+        plan_index: int = 0,
     ) -> Peer:
         """Record an INTENT from a peer, creating the entry if it is new.
 
@@ -150,6 +159,8 @@ class PeerTable:
         peer.held_task_id = held_task_id
         peer.next_nodes = tuple(next_nodes)
         peer.eta_ms = tuple(eta_ms)
+        peer.plan_seq = plan_seq
+        peer.plan_index = plan_index
         peer.intents_received += 1
         return peer
 

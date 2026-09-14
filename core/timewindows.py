@@ -215,12 +215,19 @@ class ResourceModel:
 
 @dataclass(frozen=True, slots=True)
 class Booking:
-    """One robot's step on one resource, as the table indexes it."""
+    """One robot's step on one resource, as the table indexes it.
+
+    ``step_index`` is the step's position in that robot's plan. INTENT carries how
+    many steps a robot has released (``plan_index``), so "has it left this resource"
+    is ``plan_index > step_index`` -- an integer comparison against a broadcast
+    counter, which is what makes precedence checkable without a position estimate.
+    """
 
     robot_id: int
     plan_seq: int
     enter_ms: int
     exit_ms: int
+    step_index: int = 0
 
     def overlaps(self, enter_ms: int, exit_ms: int, margin_ms: int) -> bool:
         return self.enter_ms - margin_ms <= exit_ms and enter_ms - margin_ms <= self.exit_ms
@@ -253,8 +260,8 @@ class ResourceTable:
         """
         self.drop_robot(plan.robot_id)
         self.plans[plan.robot_id] = plan
-        for step in plan.steps:
-            booking = Booking(plan.robot_id, plan.plan_seq, step.enter_ms, step.exit_ms)
+        for index, step in enumerate(plan.steps):
+            booking = Booking(plan.robot_id, plan.plan_seq, step.enter_ms, step.exit_ms, index)
             bucket = self._index.setdefault(step.resource, [])
             bucket.append(booking)
             bucket.sort(key=lambda b: (b.enter_ms, b.robot_id))
@@ -348,15 +355,80 @@ class ResourceTable:
                 return booking
         return None
 
+    def plan_ends(self, *, exclude_robot: int = -1) -> set[int]:
+        """The last node of every live plan: where somebody is going to stand."""
+        return {
+            plan.nodes[-1]
+            for rid, plan in self.plans.items()
+            if rid != exclude_robot and plan.nodes
+        }
+
     def summary(self) -> str:
         if not self.plans:
             return "no plans"
         return "; ".join(str(self.plans[rid]) for rid in sorted(self.plans))
 
 
+def conflict_between(mine: RoutePlan, theirs: RoutePlan, margin_ms: int) -> Resource | None:
+    """The first resource on which two plans cannot both stand, or None.
+
+    Two windows on a capacity-one resource within the margin of each other; or, on
+    a lane, one plan entering after the other but leaving before it plus the
+    following gap -- an overtake the lane's FIFO forbids. Plans built against each
+    other never conflict; this catches the races, when two robots committed before
+    either heard the other, and the losses, when a PATH frame never arrived.
+    """
+    by_resource: dict[Resource, list[Step]] = {}
+    for step in theirs.steps:
+        by_resource.setdefault(step.resource, []).append(step)
+    for step in mine.steps:
+        for other in by_resource.get(step.resource, ()):
+            res = step.resource
+            if res.kind == LANE:
+                if step.enter_ms < other.enter_ms and other.exit_ms < step.exit_ms + config.FOLLOW_GAP_MS:
+                    return res
+                if other.enter_ms < step.enter_ms and step.exit_ms < other.exit_ms + config.FOLLOW_GAP_MS:
+                    return res
+                continue
+            if other.enter_ms - margin_ms <= step.exit_ms and step.enter_ms - margin_ms <= other.exit_ms:
+                return res
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Wire form: a plan is a node list with one time per node, nothing else
 # ---------------------------------------------------------------------------
+
+REST_HOLD_MS = 30_000
+"""How long a resting robot's station stays booked per PATH frame. A robot standing
+in a bay with nothing to do repeats a one-node plan every PATH_REPEAT_MS, so the
+booking never lapses while it is there and lapses on its own once it is gone or
+silent -- the same self-healing repetition INTENT uses, and the reason no peer
+ever plans into an occupied bay."""
+
+
+def resting_plan(
+    model: ResourceModel,
+    *,
+    robot_id: int,
+    plan_seq: int,
+    priority: int,
+    since_ms: int,
+    now_ms: int,
+    leaf: int,
+) -> RoutePlan:
+    """A plan that goes nowhere: hold this station from ``since_ms``, the moment
+    the robot came to rest, until REST_HOLD_MS after ``now_ms``.
+
+    The start never moves. Each refresh extends only the end: a robot queued for
+    this bay booked its window after the rest began, and if the rest's start crept
+    forward with every repeat that robot would one day find its own booking the
+    earlier of the two and drive in -- which is how two idle robots met in a bay.
+    """
+    return RoutePlan(
+        robot_id, plan_seq, priority, now_ms, (leaf,),
+        (Step(model.station(leaf), since_ms, now_ms + REST_HOLD_MS),),
+    )
 
 
 def plan_entries(model: ResourceModel, plan: RoutePlan) -> list[tuple[int, int]]:
@@ -376,6 +448,8 @@ def plan_entries(model: ResourceModel, plan: RoutePlan) -> list[tuple[int, int]]
         if index == last:
             if model.is_station(node) and last > 0:
                 entries.append((node, steps[-1].enter_ms))
+            elif last == 0:
+                entries.append((node, steps[0].enter_ms if steps else plan.committed_ms))
             else:
                 entries.append((node, steps[-1].exit_ms if steps else plan.committed_ms))
             break
@@ -387,7 +461,7 @@ def plan_entries(model: ResourceModel, plan: RoutePlan) -> list[tuple[int, int]]
             if model.is_station(nodes[index + 1]):
                 wanted = model.station(nodes[index + 1])
         while cursor < len(steps) and steps[cursor].resource != wanted:
-            cursor += 1
+            cursor += 1  # skips the departure station, which shares the lane's start
         if cursor >= len(steps):
             raise ValueError(f"plan {plan} has no step for node {node}")
         entries.append((node, steps[cursor].enter_ms))
@@ -422,7 +496,14 @@ def plan_from_entries(
                 steps.append(
                     Step(model.station(node), at, at + model.station_in_ms(node) + config.STATION_HOLD_MS)
                 )
+            elif last == 0 and model.is_station(node):
+                # Resting: held since ``at``, refreshed from this frame's commit.
+                steps.append(Step(model.station(node), at, max(at, committed_ms) + REST_HOLD_MS))
             break
+        if index == 0 and model.is_station(node):
+            # Leaving a station: it stays held from the commit until the robot has
+            # driven out to the anchor's region boundary.
+            steps.append(Step(model.station(node), min(committed_ms, at), at + model.station_in_ms(node)))
         lane_from = at
         if model.has_region(node):
             steps.append(Step(model.region(node), at, at + model.region_cross_ms))

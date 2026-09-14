@@ -28,15 +28,19 @@ from core.zones import ZoneMap  # noqa: E402
 
 MAPS_DIR = REPO_ROOT / "maps"
 
-COL_SPACING_MM = 5000
+COL_SPACING_MM = 6000
 """Equal to the row spacing on purpose. Perimeter edges are split at their midpoints to
 give every station and bay its own anchor, and a midpoint with a bay is a junction whose
 conflict region extends JUNCTION_FOOTPRINT_MM (1200) along the aisle. Two such regions
 must not overlap or they would have to merge into one capacity-1 resource -- and with
 bays on most of the ring that would chain whole rows together. At 4000 the midpoints sat
 2000 mm from the grid junctions and 24 region pairs overlapped on the 30-map, 88 on the
-100-map; at 5000 they sit 2500 apart, 100 mm clear."""
-ROW_SPACING_MM = 5000
+100-map. At 5000 they sat 2500 apart, 100 mm clear -- but a robot holding for its turn
+stops HOLD_LINE_MM short of the next region, and 100 mm of lane put that stop inside
+the region behind it, where a robot turning through the neighbouring junction in its
+700 mm lane passed 495 mm from it. At 6000 the midpoints sit 3000 apart: 600 mm of lane,
+room for the hold line outside both regions (core.graph.MIN_JUNCTION_SPACING_MM)."""
+ROW_SPACING_MM = 6000
 
 ZONE_BUDGET_NOTE = """
 The SRS is internally inconsistent about auction traffic at fleet scale, and the
@@ -264,7 +268,7 @@ WAREHOUSE_100 = dict(
     name="warehouse_zoned_100",
     description=(
         "Zoned warehouse for the 100-AMR scale scenario. 24x12 grid of aisle "
-        "intersections (92 m x 55 m), partitioned into 24 zones as 6 column "
+        "intersections (138 m x 66 m), partitioned into 24 zones as 6 column "
         "bands x 4 row bands. Requires 16-bit ids (540 edges exceeds the "
         "8-bit ceiling of 255). Zone count is set by the NFR-1.12 frame budget "
         "under FR-9.3 adjacent-zone eligibility -- see ZONE_BUDGET_NOTE in "

@@ -301,10 +301,11 @@ class TestPlanShape:
         table = ResourceTable()
         plans = []
         for rid in range(1, 8):
-            pick = graph.pickup_nodes[rid % len(graph.pickup_nodes)]
+            # Each robot leaves its own bay: two robots cannot stand in one station.
+            bay = graph.parking_nodes[rid]
             drop = graph.drop_nodes[(rid * 3) % len(graph.drop_nodes)]
             plan = planner.plan(
-                table, start=from_station(model, pick), goal=drop,
+                table, start=from_station(model, bay), goal=drop,
                 robot_id=rid, priority=10, plan_seq=1, committed_ms=rid,
             )
             assert plan is not None
@@ -312,7 +313,11 @@ class TestPlanShape:
             plans.append(plan)
         for plan in plans:
             assert_no_waiting_inside(plan, model)
-            for before, after in zip(plan.steps, plan.steps[1:]):
+            # The departure station is held while the robot drives out along the
+            # spur lane, so those two steps overlap by design; every other pair is
+            # sequential.
+            body = plan.steps[1:] if plan.steps[0].resource.kind == STATION else plan.steps
+            for before, after in zip(body, body[1:]):
                 gap = after.enter_ms - before.exit_ms
                 assert gap >= 0, f"{before} and {after} overlap in one plan"
                 if gap > 0:
@@ -372,3 +377,101 @@ class TestBudget:
             f"median plan took {typical:.1f} ms against a 24-plan table; "
             f"FR-3.6 allows {config.PLAN_DEADLINE_MS}"
         )
+
+
+class TestWireForm:
+    """A plan crosses the mesh as one time per node and comes back the same."""
+
+    @pytest.mark.parametrize("map_name", ["benchmark_map", "warehouse_zoned_30"])
+    def test_a_plan_survives_the_wire(self, map_name: str) -> None:
+        from core.timewindows import plan_entries, plan_from_entries
+
+        graph = Graph.load(f"maps/{map_name}.json")
+        model = ResourceModel(graph)
+        planner = TimeWindowPlanner(model)
+        table = ResourceTable()
+        for rid in range(1, 5):
+            pick = graph.pickup_nodes[rid % len(graph.pickup_nodes)]
+            drop = graph.drop_nodes[(rid * 3) % len(graph.drop_nodes)]
+            plan = planner.plan(
+                table, start=from_station(model, pick, at_ms=rid * 100), goal=drop,
+                robot_id=rid, priority=10, plan_seq=rid, committed_ms=rid * 100,
+            )
+            assert plan is not None
+            entries = plan_entries(model, plan)
+            back = plan_from_entries(
+                model, robot_id=rid, plan_seq=rid, priority=10,
+                committed_ms=rid * 100, entries=entries,
+            )
+            assert back == plan, f"\n{plan.steps}\n!=\n{back.steps}"
+            table.replace_plan(back)
+
+    def test_a_resting_plan_survives_the_wire(self) -> None:
+        from core.timewindows import REST_HOLD_MS, plan_entries, plan_from_entries, resting_plan
+
+        graph = Graph.load("maps/benchmark_map.json")
+        model = ResourceModel(graph)
+        bay = graph.parking_nodes[0]
+        plan = resting_plan(model, robot_id=3, plan_seq=7, priority=0, since_ms=2000, now_ms=5000, leaf=bay)
+        back = plan_from_entries(
+            model, robot_id=3, plan_seq=7, priority=0, committed_ms=5000,
+            entries=plan_entries(model, plan),
+        )
+        assert back == plan
+        assert back.steps[0].enter_ms == 2000, "the rest keeps its original start"
+        assert back.steps[0].exit_ms == 5000 + REST_HOLD_MS
+
+    def test_a_mid_edge_replan_survives_the_wire(self) -> None:
+        from core.timewindows import plan_entries, plan_from_entries
+
+        graph = Graph.load("maps/warehouse_zoned_30.json")
+        model = ResourceModel(graph)
+        planner = TimeWindowPlanner(model)
+        pick = graph.pickup_nodes[0]
+        anchor, spur = model.anchor_of(pick)
+        # Past the anchor, on the first aisle out of it.
+        nxt = next(n for n, _ in graph.neighbours(anchor) if n != pick)
+        start = Start(nxt, 9000, waitable=True, prefix_node=anchor, prefix_ms=4000)
+        plan = planner.plan(
+            ResourceTable(), start=start, goal=graph.drop_nodes[2],
+            robot_id=1, priority=10, plan_seq=2, committed_ms=8000,
+        )
+        assert plan is not None
+        assert plan.nodes[0] == anchor
+        back = plan_from_entries(
+            model, robot_id=1, plan_seq=2, priority=10, committed_ms=8000,
+            entries=plan_entries(model, plan),
+        )
+        assert back == plan, f"\n{plan.steps}\n!=\n{back.steps}"
+
+    def test_every_plan_a_fleet_commits_survives_the_wire(self) -> None:
+        """Execution by precedence reads step *indices* off INTENT, so a peer's
+        decoded copy of a plan must match the sender's step for step. Every plan
+        committed in a short 6-robot run, including mid-edge, mid-spur and
+        in-region replans, is checked."""
+        from core import scenarios
+        from core.timewindows import plan_entries, plan_from_entries
+        from simulator.scenario import AuctionAllocator, build
+
+        sim = build(scenarios.get("bench3"), seed=0, allocator=AuctionAllocator(), robots=6, task_count=18, waves=1)
+        seen: set[tuple[int, int]] = set()
+        checked = 0
+        for _ in range(15_000):
+            sim.step()
+            for robot in sim.engine.robots:
+                plan = robot.plan
+                if plan is None or (robot.robot_id, plan.plan_seq) in seen:
+                    continue
+                seen.add((robot.robot_id, plan.plan_seq))
+                model = robot.resources
+                back = plan_from_entries(
+                    model, robot_id=plan.robot_id, plan_seq=plan.plan_seq, priority=plan.priority,
+                    committed_ms=plan.committed_ms, entries=plan_entries(model, plan),
+                )
+                assert back.steps == plan.steps, (
+                    f"r{robot.robot_id} plan#{plan.plan_seq} {plan.nodes}:\n{plan.steps}\n!=\n{back.steps}"
+                )
+                checked += 1
+            if sim.is_finished:
+                break
+        assert checked > 30

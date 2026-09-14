@@ -1,6 +1,6 @@
 {
  "name": "loop_map",
- "description": "Cyclic-conflict map for TC-3 and the Appendix C proof. A triangle of three single-lane junction-to-junction edges, each junction carrying one spur. Placing robots on S0/S1/S2 with goals S1/S2/S0 creates a three-way cyclic wait: each robot needs the segment the next one is about to occupy. The total order on (priority, robot_id) must yield exactly one robot proceeding, with no cycle able to form. Three parking bays (B0/B1/B2) hang off the spurs and are not task endpoints. An idle AMR must have somewhere to stand that nobody needs: parking on a pickup node simply relocates the jam, and a dead-end spur holds one robot.",
+ "description": "Cyclic-conflict map for TC-3 and the Appendix C proof. A triangle of three single-lane junction-to-junction edges, each junction carrying one spur. Placing robots on S0/S1/S2 with goals S1/S2/S0 creates a three-way cyclic wait: each robot needs the segment the next one is about to occupy. The total order on (priority, robot_id) must yield exactly one robot proceeding, with no cycle able to form. Three parking bays (B0/B1/B2) hang off the junctions as their own leaves and are not task endpoints -- not behind the stations, where a resting robot would stand on a task's only way out. An idle AMR must have somewhere to stand that nobody needs: parking on a pickup node simply relocates the jam, and a dead-end spur holds one robot.",
  "nodes": [
   {
    "id": 0,
@@ -53,8 +53,8 @@
   {
    "id": 6,
    "name": "B0",
-   "x": -2000,
-   "y": 10000,
+   "x": 10000,
+   "y": 4000,
    "junction": false,
    "marker": true,
    "parking": true,
@@ -64,8 +64,8 @@
   {
    "id": 7,
    "name": "B1",
-   "x": 28000,
-   "y": 10000,
+   "x": 16000,
+   "y": 4000,
    "junction": false,
    "marker": true,
    "parking": true,
@@ -75,8 +75,8 @@
   {
    "id": 8,
    "name": "B2",
-   "x": 13000,
-   "y": 27000,
+   "x": 7000,
+   "y": 15000,
    "junction": false,
    "marker": true,
    "parking": true,
@@ -120,17 +120,17 @@
   },
   {
    "id": 6,
-   "u": 3,
+   "u": 0,
    "v": 6
   },
   {
    "id": 7,
-   "u": 4,
+   "u": 1,
    "v": 7
   },
   {
    "id": 8,
-   "u": 5,
+   "u": 2,
    "v": 8
   }
  ],

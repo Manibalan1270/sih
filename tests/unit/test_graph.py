@@ -188,10 +188,10 @@ class TestQueries:
         # Charging lives at the staging bays, not at the depots: the depots are task
         # endpoints, and a robot that finished charging on one blocked the robot whose
         # task was there.
-        assert set(benchmark_map.parking_nodes) == {12, 13, 14}
+        assert set(benchmark_map.parking_nodes) == {12, 13, 14, 19, 20, 21}
         assert set(benchmark_map.chargers) == set(benchmark_map.parking_nodes)
         # Depots and parking bays are spurs, so they are not arbitration points.
-        spurs = {0, 7, 12, 13, 14, 15, 16, 17, 18}  # depots, bays, and the station spurs
+        spurs = {0, 7, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}  # depots, bays, station spurs
         assert set(benchmark_map.junctions) == set(benchmark_map.nodes) - spurs
 
     def test_parking_bays_are_not_task_endpoints(self, benchmark_map: Graph) -> None:

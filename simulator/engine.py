@@ -301,6 +301,17 @@ class Engine:
                 # first, and the higher gives way.
                 if not departing and robot.robot_id < other.robot_id:
                     continue
+                # The oncoming lane is not ahead. A robot leaving the node along the
+                # edge this one is arriving on, in the other direction, is beside it,
+                # not in front of it -- a forward sensor does not see it, and treating
+                # it as an obstacle held robots inside the region behind them until
+                # three of them waited in a ring. Single-lane edges have no other lane.
+                if (
+                    other.edge_id == robot.edge_id
+                    and other.next_node != robot.next_node
+                    and not robot.graph.edge(robot.edge_id).single_lane
+                ):
+                    continue
                 if to_node < nearest:
                     nearest, blocker = to_node, other.robot_id
 
@@ -429,13 +440,29 @@ class Engine:
 
 
 def spawn_positions(graph: Graph, count: int, *, seed: int) -> list[int]:
-    """Pick ``count`` distinct, spread-out start nodes deterministically.
+    """Pick ``count`` distinct start nodes deterministically, bays first.
 
-    Spread matters: spawning a fleet on adjacent nodes creates an artificial
-    traffic jam at t=0 that has nothing to do with the coordination logic, and
-    would flatter or damn Configuration A and B unequally.
+    A fleet starts in its bays: that is where robots are between shifts, it is
+    the one place standing still obstructs nobody, and it is what lets every
+    robot's first route plan begin at a station rather than inside a junction.
+    Only when the fleet outnumbers the bays does the remainder spread across the
+    other nodes, seeded and strided so different seeds use different nodes without
+    clustering -- an artificial jam at t=0 would flatter or damn Configuration A
+    and B unequally.
     """
-    nodes = sorted(graph.nodes)
+    bays = sorted(graph.parking_nodes)
+    if bays:
+        offset = random.Random(seed).randrange(len(bays))
+        chosen = [bays[(offset + i) % len(bays)] for i in range(min(count, len(bays)))]
+        if len(chosen) == count:
+            return chosen
+        rest = _spread_positions(graph, count - len(chosen), seed=seed, avoid=set(chosen))
+        return chosen + rest
+    return _spread_positions(graph, count, seed=seed, avoid=set())
+
+
+def _spread_positions(graph: Graph, count: int, *, seed: int, avoid: set[int]) -> list[int]:
+    nodes = sorted(n for n in graph.nodes if n not in avoid)
     if count > len(nodes):
         raise ValueError(
             f"cannot spawn {count} robots on a {len(nodes)}-node map"

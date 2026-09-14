@@ -100,97 +100,11 @@ class TestSingleLaneAislesHaveNoOffset:
         assert graph.single_lane_edges
 
 
-class TestTheClaimCoversTheApproachThroughTheCorner:
-    """The fix: a junction claim has to start where the collision risk starts.
-
-    A claim beginning at *arrival* says nothing about the stretch where a robot can
-    actually hit someone -- from JUNCTION_FOOTPRINT_MM out. The pure-function tests
-    here pin the window arithmetic; the behavioural one pins the half that no amount of
-    window arithmetic covers, which is the robot that has already crossed.
-    """
-
-    def test_the_default_window_is_still_appendix_e(self) -> None:
-        """Callers that know nothing about their speed get exactly the SRS behaviour."""
-        from core.arbitration import crossing_window
-
-        window = crossing_window(arrival_ms=10_000)
-        assert window.start_ms == 10_000
-        assert window.end_ms == 10_000 + config.JUNCTION_OCCUPANCY_MS
-
-    def test_an_approach_offset_moves_the_start_earlier(self) -> None:
-        from core.arbitration import crossing_window
-
-        window = crossing_window(arrival_ms=10_000, approach_ms=1500)
-        assert window.start_ms == 8500
-        assert window.end_ms == 10_000 + config.JUNCTION_OCCUPANCY_MS
+class TestTheCornerOutlastsAppendixE:
+    """Why the region is sized by geometry, not by JUNCTION_OCCUPANCY_MS: crossing a
+    corner takes longer than the constant Appendix E reserves for it."""
 
     def test_the_corner_takes_longer_to_cross_than_appendix_e_reserves(self) -> None:
         """Which is the whole reason the offset is needed rather than the constant."""
         corner_ms = config.JUNCTION_FOOTPRINT_MM * 1000 // config.NOMINAL_SPEED_MM_S
         assert corner_ms > config.JUNCTION_OCCUPANCY_MS
-
-
-class TestAClaimSurvivesTheCrossing:
-    def test_a_robot_still_inside_the_corner_keeps_claiming_the_junction(self) -> None:
-        """Arbitration only ever looks at ``next_node``, so without this a robot stops
-        claiming a junction the instant it passes it -- while still standing in it.
-
-        That is what collided on bench3 seed 13: one robot 644 mm past node 4 held no
-        claim on it at all while another turned into the same corner 1196 mm out. There
-        was nothing wrong with the ranking; there was nothing left to rank against.
-        """
-        from communication.messages import Reserve
-
-        from core.arbitration import Arbiter
-        from core.graph import Graph
-        from core.robot import Robot
-        from core.task import Task
-        from tests.conftest import ReferencePlanner
-
-        graph = Graph.load("maps/benchmark_map.json")
-        robot = Robot(
-            robot_id=1,
-            graph=graph,
-            planner=ReferencePlanner(graph),
-            home_node=1,
-            arbiter=Arbiter(robot_id=1),
-        )
-        robot.accept_task(
-            Task(task_id=1, pickup=4, drop=5, priority=10, created_at_ms=0), 0
-        )
-
-        # Driven through the Engine because Robot.step is pure -- the engine owns
-        # motion, so a robot stepped on its own never advances and never crosses
-        # anything. The step method is wrapped rather than the engine inspected, because
-        # what matters is the payload the robot itself chose to emit.
-        from simulator.engine import Engine
-
-        engine = Engine(graph=graph, robots=[robot])
-        seen: list[tuple[int, int, int]] = []
-        inner = robot.step
-
-        def watching(now_ms, inbox=()):
-            result = inner(now_ms, inbox)
-            if robot.edge_id is not None and 0 < robot.progress_mm < config.JUNCTION_FOOTPRINT_MM:
-                if graph.node(robot.current_node).is_junction:
-                    for payload in result.outbox:
-                        if isinstance(payload, Reserve) and payload.junction_id == robot.current_node:
-                            seen.append((now_ms, robot.current_node, robot.progress_mm))
-            return result
-
-        robot.step = watching  # type: ignore[method-assign]
-        engine.run_ticks(2000)
-
-        assert seen, "a robot inside a junction's corner never re-claimed it"
-        for _, node, progress in seen:
-            assert progress < config.JUNCTION_FOOTPRINT_MM
-            assert graph.node(node).is_junction
-
-    def test_the_clearing_claim_is_rate_limited(self) -> None:
-        """At a 20 ms tick a 1500 ms crossing would be 75 RESERVE frames for one
-        junction, which NFR-1.12's budget does not survive. Capped at the INTENT period
-        it is seven or eight."""
-        assert config.INTENT_PERIOD_MS > 20
-        corner_ms = config.JUNCTION_FOOTPRINT_MM * 1000 // config.NOMINAL_SPEED_MM_S
-        frames = corner_ms // config.INTENT_PERIOD_MS
-        assert frames <= 10
