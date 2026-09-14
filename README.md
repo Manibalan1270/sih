@@ -234,135 +234,76 @@ All found while implementing; all should be corrected in v1.1.
 
 ## Status
 
-**Phases 0-12 in progress.** Latest work includes:
-- **Phase 12 (AC-6)**: Fleet dashboard and Run Control — scenario selection, execution control, and visualization
-- **Route-level reservations**: time-window based planning with free-time-window planner
-- **Protocol enhancements**: PATH frames, plan_seq/plan_index on INTENT for route coordination  
-- **Webots integration**: fleet supervisor, world generation, capacity probing at ~7x real time
-- **Well-formed maps**: benchmark_map, warehouse_zoned_30, warehouse_zoned_100 now guarantee no task endpoint on junctions
+Last updated 2026-09-14 (end of the route-level reservation work, plan Steps 0-4).
 
-`bench3` at 3 AMRs is **clean across 30 seeds**: zero collisions, every run completing. 
-6 AMRs on the same map -- twice its design density, with three bays for six robots -- also completes without collisions or cycles.
+### Done and measured on this commit
 
-That sequence went 3 failures in 20 seeds -> 1 -> 0 collisions in 30, and the fixes that
-got there all turned out to be one idea applied in four places: **a robot that has no
-move left is a fact, not a contender.** The Appendix C total order is only meaningful
-between robots that both still have a choice, and ranking one that does not have a choice
-produces either a collision or a cycle. The four places were a robot already inside a
-single-lane corridor (defect 11), a robot standing in a junction's corner (defect 10), a
-robot idling on a node that tasks need (defect 7), and a robot queued behind another on
-the approach to a contended resource (defect 12).
+| what | evidence |
+|---|---|
+| **Route-level reservation executed by precedence** (plan Steps 0-4). `core/timewindows.py` (resources, bookings, wire form), `core/planner_timewindow.py` (free-time-window A*), `core/robot.py` (commit a plan, PATH broadcast, enter by precedence), `core/arbitration.py` (shrunk to the race rule `plan_precedence`). The per-junction machinery and `core/reservation.py` are gone. | `bench3` 30/30 seeds: 12/12 tasks, 0 collisions. 6 AMRs on the benchmark map (twice its design density): 10/10 seeds clean, every task done. `visual30` headless: 120/120 tasks, 0 collisions on seeds 0-2 (makespan 25-29 min sim time). |
+| **Protocol** (Step 3): `MessageType.PATH`, `Intent.plan_seq/plan_index`; every plan a fleet commits round-trips the wire step for step. | `tests/unit/test_messages.py::TestPath`, `tests/unit/test_planner_timewindow.py::TestWireForm` |
+| **Kiva-style, well-formed maps** (Steps 0-1), grid pitch 6000 so a hold line fits outside both regions of a ring edge; six bays on the benchmark map. | `tests/unit/test_maps.py` invariants (well-formed, no lane overlap, junction spacing) |
+| **Fleet dashboard + Run Control** (Phase 12, AC-6): `py -m web.backend.app`, then <http://127.0.0.1:8000>. Read-only by construction (FR-8.4). | `tests/unit/test_web.py`, `tests/test_architecture.py::TestDashboardIsReadOnly` |
+| **Webots 3D** (AC-5/AC-6 visual): `scripts/generate_world.py`, `webots/controllers/fleet_supervisor`, `scripts/probe_webots.py`. This host sustains 30 AMRs at ~7x real time. | `tests/unit/test_webots.py`; `config/webots_capacity.json` |
+| Full suite | **602 passed, 3 skipped** (hardware-only TCs), `py -m pytest -q` |
 
-The approach follows the lane/conflict-region treatment in Google/Intrinsic's
-US 11,709,502 B2, *Roadmap annotation for deadlock-free multi-agent navigation*, where
-lanes deliberately end a gap short of an intersection so a robot stopped at the end of
-one cannot interfere with robots crossing, and robots that cannot cross are held
-*outside* the conflict region rather than partway into it. The bounded-lookahead framing
--- each robot needing to examine only a few states ahead rather than the whole
-configuration space -- follows the distributed higher-order-deadlock literature, and maps
-onto INTENT's existing three-node horizon.
+Acceptance criteria as they stand: **AC-1** largely met (70 traced TCs); **AC-2** zero collisions
+at 3, 6 and 30 AMRs on the maps above; **AC-5** met; **AC-6** dashboard and Webots exist and
+render live position and battery. **AC-3 and AC-4 are not yet demonstrated** (below).
 
-That distinction matters and the earlier wording here hid it. The Phase 6 gate was
-read as met because the first 8 seeds pass, and the same 8 seeds were used to clear
-Phase 7b. Widening to 20 shows AC-2 is **not** met at 3 AMRs. Every failure seen at this
-fleet size has been SRS defect 10 -- the junction-corner footprint -- in one guise or
-another: two robots converging in the corner unseen, the corner reading as headway and
-closing a wait-for cycle against a junction yield, and a robot coming to rest inside a
-corner another robot is leaving. The first two are fixed; the last is seed 19.
+### Left to do, in order
 
-Both densities tried at 3 AMRs -- 12 tasks over 4 waves and 24 in a single wave --
-behave the same way. TC-3's single-lane ring clears.
+1. **Step 5 -- Configuration A as FR-10.5 defines it.** In the `arbiter is None` branch of
+   `Robot._drive_tick` (`_uncoordinated_speed` is the stub): halt when any peer footprint is
+   within `STOP_WAIT_RADIUS_MM` (1800, already in `core/config.py`), resume beyond
+   `STOP_WAIT_RADIUS_MM + STOP_WAIT_RESUME_HYSTERESIS_MM`, lower `robot_id` proceeds when both
+   halt. No mesh, no INTENT. `tests/unit/test_scenario.py::test_an_uncoordinated_fleet_never_yields`
+   must still hold. Without this, A has no halting penalty and AC-3 cannot be measured honestly.
+2. **Step 6 -- evidence.** `benchmark/runner.py` (does not exist yet; `scripts/run_scenario.py`
+   already points at it): bench3, seeds 0..N, identical task sets, A vs B, mean and sd of
+   makespan, collisions, deadlock cycles, hold-time breakdown (`RobotMetrics.precedence_hold_ms`,
+   `stopped_ms`), auction and PATH frames per task (`RobotMetrics.paths_sent`, mesh stats).
+   Then in `tests/coordination/test_tc.py`: **AC-2** (zero `coordination_failures`, no
+   `StallReport.is_deadlocked`, 30 seeds), **AC-3** (`mean(makespan_B) <= 0.8 * mean(makespan_A)`,
+   >= 10 seeds), **AC-4** (stop the `OrderGateway` allocator once tasks are held; every held task
+   still completes). Paste the runner output here.
+3. **A duplicate completion.** One `visual30` seed-0 run reported 121/120 tasks: a task
+   completed twice (FR-4.8 duplicate holding after a lost frame). No collision, but
+   `Simulation.is_finished` counts distinct ids so it hides in the report; find and fix.
+4. **Throughput.** B is safe but slow at 30 AMRs (~2000-5000 replans per run, robots queue at
+   the six pickups). Levers: `REPLAN_SLACK_MS`, `SETTLE_MS`, release regions earlier than a full
+   footprint past the node, and the deferred Token-Passing bid filter (do not bid for a task whose
+   endpoints are the goal of a live plan -- `ResourceTable.plan_ends`). Measure before tuning.
+5. Phase 8 traffic learning stays deferred: the reservation table already routes around
+   congestion and `Robot.edge_cost` is the overlay hook.
 
-### Above 3 AMRs it does not hold, and the gap is wide
+### How the coordination works now (read before touching it)
 
-Measured on this commit, not projected:
+A robot books its **whole route** as time windows on resources -- junction *regions*
+(node plus `JUNCTION_FOOTPRINT_MM` into every arm, capacity one, never a place to wait),
+*lanes* (one per direction of a two-lane edge, FIFO, waiting only at the end), single-lane
+*corridors* (capacity one, atomic) and *stations* (leaves) -- against every plan it has heard
+(PATH, repeated every `PATH_REPEAT_MS`). It then drives by **order, never time**: it enters a
+resource only after every robot booked ahead of it there has released it, which that robot's
+INTENT `plan_index` says. Two plans committed before either heard the other are settled by
+`committed_ms`, then Appendix C's total order; the loser replans. The invariants this rests on,
+each of which was a measured collision or deadlock on the way here:
 
-| fleet | map | result |
-|---|---|---|
-| 3 | benchmark_map | clean, 30 of 30 seeds |
-| 6 | benchmark_map | clean, no cycle, no collision |
-| 30 (`visual30`) | warehouse_zoned_30 | seed 0 **completes 120 of 120** with 1 collision; seed 1 reaches 83 with 2 and a cycle |
-| 100 (`scale100`) | warehouse_zoned_100 | not re-measured since the map fix |
+- A peer's plan lives as long as the peer does; it is never expired by its own timetable.
+- The sender's step list and every receiver's decoded copy are identical (`plan_index` is
+  compared against step indices). Region steps are always exactly `region_cross_ms` long.
+- Plan progress is indexed by route position, never node id (routes may turn round).
+- A replan carries the booked entry times of the steps under the wheels; re-timing them
+  flips the order against a peer that was waiting.
+- Lanes are gated on *entry* order (no overtaking on paper either); the planner validates
+  lane order after assembly and retries with a floor on the offending lane.
+- A late robot re-books after `REPLAN_SLACK_MS`, but only prefix steps count as entered at
+  adoption -- counting them every tick made the corridor beyond a junction read as entered.
+- A resting robot's bay booking keeps its original start across refreshes.
+- Geometry: the hold line sits outside the region behind as well (`Robot._hold_line_mm`);
+  `HOLD_LINE_MM` is 300 because the footprint is lane offset plus collision distance with no
+  margin; the modelled sensor ignores the oncoming lane of the same edge.
 
-### Where local rules stop working, and what was tried past that point
-
-Four further changes were built after the state above, each grounded and each measured,
-and each fixed one seed while breaking another. They are recorded because the pattern is
-the result:
-
-- **Convoy priority inheritance** (Sha, Rajkumar & Lehoczky 1990): every robot in a
-  same-direction queue asserts the queue's highest priority, so a high-priority robot
-  stuck behind a low-priority head is not outranked on the head's behalf. Correctly
-  targets a measured inversion at J7. seed 0 unchanged; seed 1 rose from 83 to 98 tasks
-  and from 2 to 5 collisions.
-- **Opposite-lane departures are not corner occupants.** Geometrically exact -- two
-  robots on one bidirectional edge going opposite ways are 2 * offset apart, always.
-  Targets a measured six-robot cycle on e5. Deadlocked seed 0 at 66 tasks every time it
-  was tried, alone or with the others, by exposing a queue-ranking configuration at J7.
-- **Queue-head ranking at junctions**, matching what corridors already do. Fixed the J7
-  configuration and raised seed 0's collisions from 1 to 5.
-- **Approach half of the window at actual speed.** Targets the one signature behind all
-  five seed 1 collisions: a robot crawling behind a leader whose 1500 ms approach claim
-  covered 360 mm of a 1200 mm corner, so it entered the corner with its claim seconds in
-  the future and stopped 4 mm inside -- 500 mm of separation instead of 507. Deadlocked
-  seed 0 at 97.
-
-Each is a correct local statement. Together they show that at 30 AMRs the remaining
-failures are not one more missing rule about one junction; they are what one-junction-
-at-a-time reasoning cannot resolve. The deadlock-freedom argument in the lane-routing
-literature (US 11,709,502 B2) rests on two things this implementation does not yet have:
-a spare-capacity condition on every lane and cycle, and routes planned sequentially in
-priority order over the *whole path*, not negotiated one resource at a time. The second
-is the sequence-level reservation per [R8] that `_arbitrate_corridor` already names as
-the fix for ring deadlocks. That is the next piece of work, and it is not a patch.
-
-`visual30` began this work at 24 of 120 tasks with 12 collisions. Part of that was never
-coordination at all: the bay generator placed bays *on top of* aisle nodes -- fifteen
-coordinates on warehouse_zoned_30 held two or more nodes -- so robots collided on lanes
-that shared no node, which no junction arbitration can prevent because there is no
-junction there. That is now an invariant (`TestLanesDoNotOverlapWithoutAJunction`) and
-both generated maps satisfy it.
-
-The `scale100` figures above predate the map fix and should be read as stale.
-
-This does **not** contradict the zoning result. The 16.4 auction frames per task
-measured at 100 AMRs against NFR-1.12's budget of 40 is a statement about
-*communication* -- that bidding stays inside a zone rather than crossing the fleet --
-and it still holds. Coordination collapsing at the same fleet size is a separate
-property, and the earlier reading of "scale100 runs" conflated the two. What runs is
-the auction; what fails is the traffic.
-
-So AC-5 is met at 3 AMRs only, and AC-6's `visual30` is not close to demonstrable
-regardless of whether Webots is installed.
-
-Three defects behind earlier failures, all of which presented as coordination
-deadlocks and none of which were:
-
-1. **A junction-footprint blind spot.** A robot's claim on a junction vanished the
-   moment it passed the node, while it was still physically inside the junction.
-   Both 6-AMR collisions were this: one robot 264 mm past a node, another 940 mm
-   from it, 497 mm apart. Section 3.4.1 already calls `current_node` "the junction
-   most recently occupied *or departed*" -- the field exists for exactly this and was
-   being used only for position.
-2. **Flat batteries.** `BATTERY_MM_PER_PERCENT` gave 250 m per charge, an order of
-   magnitude too pessimistic, and nothing implemented Appendix A's charging cycle, so
-   `CHARGING` was unreachable. Robots hit 0%, refused work, and runs stalled with
-   tasks unallocated. FE-6 groups low battery with blocked aisles and peer failure --
-   an *exception* -- but at 250 m it was routine.
-3. **Chargers on task endpoints.** A robot that finished charging parked on a node
-   that was both charger and drop point, blocking the robot whose task was there.
-   Charging now lives on the staging bays, which are never task endpoints.
-
-A correction worth recording: the ring deadlock was diagnosed as a resource-ordering
-problem needing sequence-level reservation per [R8]. That was wrong. It was defects
-2 and 3, and the ring clears with no change to arbitration. The test had been marked
-`xfail(strict=True)`, which is the only reason the mistaken diagnosis was caught
-rather than acted on.
-
-Current work and known issues:
-
-- **AC-3 (>=20% makespan reduction)**: In progress via Phase 8-11 (traffic learning and Configuration A baseline). Route-level reservations now provide precedence-based execution for multi-hop paths.
-- **Route-level coordination**: New time-window planner enables precedence execution and multi-resource ordering. This addresses the sequence-level reservation needed for SRS defect 5 (ring deadlocks at 30+ AMRs).
-- **Safety above 3 AMRs**: Fleet coordination tested at 30 AMRs with new route-level reservations. See [[route-level-reservation-plan]] for implementation roadmap.
-- **TC-3 ring case (SRS defect 5)**: Targeted by route-level reservations with precedence-based ordering across multiple junctions.
-- **`visual30` visualization**: Fleet supervisor implemented; requires Webots installation for 3D rendering at 30 AMRs.
+Useful diagnostics: `py scripts/run_scenario.py <scenario> --seed N [--robots K] --events collision`;
+`scripts/diagnose_stall.py`; `Engine.stall_report` names wait-for cycles with their causes
+(`precedence`, `settle`, `opaque`, `headway`, `corner`).
