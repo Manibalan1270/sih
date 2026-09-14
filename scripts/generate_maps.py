@@ -28,7 +28,14 @@ from core.zones import ZoneMap  # noqa: E402
 
 MAPS_DIR = REPO_ROOT / "maps"
 
-COL_SPACING_MM = 4000
+COL_SPACING_MM = 5000
+"""Equal to the row spacing on purpose. Perimeter edges are split at their midpoints to
+give every station and bay its own anchor, and a midpoint with a bay is a junction whose
+conflict region extends JUNCTION_FOOTPRINT_MM (1200) along the aisle. Two such regions
+must not overlap or they would have to merge into one capacity-1 resource -- and with
+bays on most of the ring that would chain whole rows together. At 4000 the midpoints sat
+2000 mm from the grid junctions and 24 region pairs overlapped on the 30-map, 88 on the
+100-map; at 5000 they sit 2500 apart, 100 mm clear."""
 ROW_SPACING_MM = 5000
 
 ZONE_BUDGET_NOTE = """
