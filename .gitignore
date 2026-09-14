@@ -13,3 +13,6 @@ config/webots_capacity.json
 
 # webots build artefacts
 simulator/webots/*.wbproj
+
+# Webots per-world editor state
+webots/worlds/.*.wbproj
