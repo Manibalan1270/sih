@@ -51,18 +51,26 @@ push is monotone, so this bounds the work, not the correctness."""
 class Start:
     """Where the search begins, as the robot knows itself.
 
-    ``node`` is the node whose region the robot will next reach (or is in). ``at_ms`` is
-    when it will be at that region's entry boundary. ``waitable`` says whether it can
-    hold there -- true on a two-lane lane or leaving a station, false if it is already
-    inside the region or came through a corridor. ``held`` are the steps it occupies
-    right now, prepended to the plan so peers keep clear of them.
+    ``node`` is the node the search continues from: the station leaf a resting robot
+    is about to leave, or the node a moving robot will next reach. ``at_ms`` is when it
+    will be there -- at that node's region entry boundary if it has one. ``waitable``
+    says whether it can hold there: true at a station or at the end of a two-lane lane,
+    false inside a region or after a corridor.
+
+    A robot replanning mid-edge names the edge it is on through ``prefix_node``, the
+    node it last left, and ``prefix_ms``, when it entered that node's region. The plan
+    then begins with that crossing and the lane it is on, so peers behind it on the
+    lane keep FIFO order and nobody books the region it just used. Everything a plan
+    contains is indexed by node this way, which is what lets the wire carry it as a
+    node list with times and nothing else.
     """
 
     node: int
     at_ms: int
     waitable: bool = True
     in_region: bool = False
-    held: tuple[Step, ...] = ()
+    prefix_node: int = -1
+    prefix_ms: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,7 +219,10 @@ class TimeWindowPlanner:
         model = self.model
         graph = model.graph
         if start.node == goal:
-            return RoutePlan(robot_id, plan_seq, priority, committed_ms, (goal,), start.held)
+            nodes, steps = self._prefix(start)
+            return RoutePlan(
+                robot_id, plan_seq, priority, committed_ms, tuple(nodes + [goal]), tuple(steps)
+            )
 
         # (f, g, counter, node, waitable, came_from)
         counter = 0
@@ -260,6 +271,23 @@ class TimeWindowPlanner:
         self.stats.unplannable += 1
         return None
 
+    def _prefix(self, start: Start) -> tuple[list[int], list[Step]]:
+        """The edge a replanning robot is already on, as the plan's opening steps."""
+        if start.prefix_node < 0:
+            return [], []
+        model = self.model
+        edge_id = model.graph.edge_between(start.prefix_node, start.node)
+        if edge_id is None:
+            return [], []
+        steps: list[Step] = []
+        lane_from = start.prefix_ms
+        if model.has_region(start.prefix_node):
+            cross = model.region_cross_ms
+            steps.append(Step(model.region(start.prefix_node), start.prefix_ms, start.prefix_ms + cross))
+            lane_from += cross
+        steps.append(Step(model.lane(edge_id, start.node), lane_from, max(lane_from, start.at_ms)))
+        return [start.prefix_node], steps
+
     def _assemble(
         self,
         start: Start,
@@ -278,13 +306,20 @@ class TimeWindowPlanner:
             node = prev
         chain.reverse()
 
-        nodes: list[int] = [start.node]
-        steps: list[Step] = list(start.held)
-        for group, s, end in chain:
+        nodes, steps = self._prefix(start)
+        nodes.append(start.node)
+        for position, (group, s, end) in enumerate(chain):
             nodes.extend(group.nodes[1:])
+            # A lane is held until the robot enters what comes next. The closing lane
+            # of a group ends when the *following* group starts, which includes any
+            # wait at the lane's end for that group's first window -- the robot is
+            # standing on the lane throughout. Booking only the traversal under-booked
+            # the lane and let a follower plan to leave it through a robot sitting at
+            # its end; the round-trip through the wire form caught the discrepancy.
+            follows_at = chain[position + 1][1] if position + 1 < len(chain) else end
             for index, rel in enumerate(group.rels):
                 exit_ms = s + rel.exit
                 if index == len(group.rels) - 1 and rel.resource.kind == LANE:
-                    exit_ms = end  # FIFO may have stretched the closing lane
+                    exit_ms = max(end, follows_at)
                 steps.append(Step(rel.resource, s + rel.enter, exit_ms))
         return RoutePlan(robot_id, plan_seq, priority, committed_ms, tuple(nodes), tuple(steps))

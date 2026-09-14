@@ -76,6 +76,7 @@ class MessageType(IntEnum):
     COMPLETE = 8
     BLOCKAGE = 9
     BEACON = 10
+    PATH = 11
 
 
 SAFETY_CRITICAL: frozenset[MessageType] = frozenset(
@@ -85,6 +86,7 @@ SAFETY_CRITICAL: frozenset[MessageType] = frozenset(
         MessageType.ANNOUNCE,
         MessageType.BID,
         MessageType.CLAIM,
+        MessageType.PATH,
     }
 )
 """Section 3.4.2's safety-critical column. IF-4.5 forbids these from requiring
@@ -149,6 +151,18 @@ class Intent:
     plainly: "INTENT repeats every 200 ms, so a dropped packet is self-healing".
     Duplicate holding now resolves within one INTENT period instead of never. Costs
     two bytes; INTENT goes from 24 to 26, against a 250-byte budget."""
+
+    plan_seq: int = 0
+    """Which of this robot's route plans is in force (see ``Path``). A peer whose table
+    holds a different plan_seq for this robot knows its copy is stale and treats the
+    robot as opaque -- its current lane and region occupied, nothing beyond assumed --
+    until the matching PATH arrives. Zero means no plan."""
+
+    plan_index: int = 0
+    """How many steps of that plan the robot has *released*: every step below this
+    index is behind it. This is what execution by precedence reads. A robot waiting to
+    enter a resource looks up who is booked ahead of it there and checks, from their
+    INTENT, that each has released it. Two bytes more; INTENT is 28."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,9 +295,35 @@ class Beacon:
     fleet_time_ms: int
 
 
+@dataclass(frozen=True, slots=True)
+class Path:
+    """A robot's booked route: one node per entry with the time it enters that node's
+    resource, relative to the frame timestamp. Everything else -- which resources,
+    for how long -- every receiver rebuilds from its own copy of the map
+    (core.timewindows.plan_from_entries), so the frame carries no resource ids.
+
+    Broadcast on commit and repeated every PATH_REPEAT_MS while the plan is active,
+    the same self-healing repetition INTENT relies on (IF-4.5: nothing on the safety
+    path may require retransmission on demand). Offsets are signed ticks of
+    MOTION_TICK_MS on the wire, so a plan replanned mid-edge can name the region it
+    entered a moment ago, and a plan can reach 655 s ahead. Sizes at the two id
+    widths: 77 nodes at 8 bits, 57 at 16, against the 50-node longest route on the
+    100-robot map.
+    """
+
+    TYPE: ClassVar[MessageType] = MessageType.PATH
+
+    plan_seq: int
+    committed_ms: int
+    priority: int
+    entries: tuple[tuple[int, int], ...]
+    """``(node, offset_ms)`` per node, offset relative to the frame timestamp."""
+    goal_task_id: int = -1
+
+
 Payload = (
     Intent | Reserve | Announce | Bid | Claim | Digest | Telemetry | Complete
-    | Blockage | Beacon
+    | Blockage | Beacon | Path
 )
 
 
@@ -323,6 +363,18 @@ HEADER_SIZE = struct.calcsize(HEADER)
 CRC_SIZE = 2
 
 MAX_DIGEST_ENTRIES = 24
+
+PATH_FIXED = "<BIBhB"
+"""plan_seq, committed_ms, priority, goal_task_id, entry count."""
+PATH_TICK_MS = config.MOTION_TICK_MS
+PATH_OFFSET_MIN, PATH_OFFSET_MAX = -(2**15), 2**15 - 1
+
+
+def max_path_nodes(id_bits: int) -> int:
+    """How many nodes one PATH frame holds at this id width."""
+    per_entry = struct.calcsize("<Bh" if id_bits == 8 else "<Hh")
+    room = config.MAX_FRAME_BYTES - HEADER_SIZE - struct.calcsize(PATH_FIXED) - CRC_SIZE
+    return room // per_entry
 """Entries per DIGEST slice. Sized so the frame stays inside CON-2's 250 bytes at
 16-bit ids: 24 * 5 + 10 = 130 bytes, leaving room for the ESP-NOW header the
 simulation does not model."""
@@ -348,7 +400,7 @@ class Codec:
     def _build_formats(self) -> dict[MessageType, str]:
         node = self._id
         return {
-            MessageType.INTENT: f"<{node}{node * 3}{'H' * 3}BBBBH",
+            MessageType.INTENT: f"<{node}{node * 3}{'H' * 3}BBBBHBB",
             MessageType.RESERVE: f"<{node}IIB",
             MessageType.ANNOUNCE: f"<H{node}{node}BIB",
             MessageType.BID: "<HiB",
@@ -357,6 +409,7 @@ class Codec:
             MessageType.COMPLETE: "<H",
             MessageType.BLOCKAGE: f"<{node}B",
             MessageType.BEACON: "<I",
+            MessageType.PATH: PATH_FIXED,
         }
 
     # -- sizes ---------------------------------------------------------------
@@ -365,6 +418,10 @@ class Codec:
         if message_type is MessageType.DIGEST:
             entry = struct.calcsize(f"<{self._id}HB")
             return HEADER_SIZE + 1 + digest_entries * entry + CRC_SIZE
+        if message_type is MessageType.PATH:
+            entry = struct.calcsize(f"<{self._id}h")
+            fixed = struct.calcsize(PATH_FIXED)
+            return HEADER_SIZE + fixed + max_path_nodes(self.id_bits) * entry + CRC_SIZE
         return HEADER_SIZE + struct.calcsize(self._formats[message_type]) + CRC_SIZE
 
     # -- encoding ------------------------------------------------------------
@@ -392,7 +449,27 @@ class Codec:
                 payload.current_node, *nodes, *[min(e, 0xFFFF) for e in etas],
                 payload.priority, payload.state, payload.battery_pct, payload.pheromone,
                 NO_TASK if payload.held_task_id < 0 else payload.held_task_id,
+                payload.plan_seq & 0xFF, min(payload.plan_index, 0xFF),
             )
+        if isinstance(payload, Path):
+            limit = max_path_nodes(self.id_bits)
+            if len(payload.entries) > limit:
+                raise ValueError(
+                    f"PATH with {len(payload.entries)} nodes exceeds the {limit} that fit "
+                    f"one frame at {self.id_bits}-bit ids"
+                )
+            out = struct.pack(
+                PATH_FIXED,
+                payload.plan_seq & 0xFF, payload.committed_ms & 0xFFFFFFFF,
+                payload.priority & 0xFF, payload.goal_task_id,
+                len(payload.entries),
+            )
+            entry_format = f"<{self._id}h"
+            for node, offset_ms in payload.entries:
+                ticks = offset_ms // PATH_TICK_MS
+                ticks = max(PATH_OFFSET_MIN, min(PATH_OFFSET_MAX, ticks))
+                out += struct.pack(entry_format, node, ticks)
+            return out
         if isinstance(payload, Reserve):
             return struct.pack(
                 self._formats[MessageType.RESERVE],
@@ -497,12 +574,29 @@ class Codec:
             )
             return Digest(entries=entries)
 
+        if message_type is MessageType.PATH:
+            fixed = struct.calcsize(PATH_FIXED)
+            if len(body) < fixed:
+                raise DecodeError("PATH shorter than its fixed part")
+            plan_seq, committed, priority, goal_task, count = struct.unpack_from(PATH_FIXED, body)
+            if count > max_path_nodes(self.id_bits):
+                raise DecodeError(f"PATH claims {count} nodes, over the frame cap")
+            entry_format = f"<{self._id}h"
+            size = struct.calcsize(entry_format)
+            if len(body) < fixed + count * size:
+                raise DecodeError("PATH shorter than its declared node count")
+            entries = []
+            for index in range(count):
+                node, ticks = struct.unpack_from(entry_format, body, fixed + index * size)
+                entries.append((node, ticks * PATH_TICK_MS))
+            return Path(plan_seq, committed, priority, tuple(entries), goal_task)
+
         fields = struct.unpack(self._formats[message_type], body)
 
         if message_type is MessageType.INTENT:
             (
                 current, n1, n2, n3, e1, e2, e3,
-                priority, state, battery, pheromone, held,
+                priority, state, battery, pheromone, held, plan_seq, plan_index,
             ) = fields
             if battery > 100:
                 raise DecodeError(f"battery {battery}% is out of range")
@@ -514,6 +608,7 @@ class Codec:
                 priority=priority, state=state,
                 battery_pct=battery, pheromone=pheromone,
                 held_task_id=-1 if held == NO_TASK else held,
+                plan_seq=plan_seq, plan_index=plan_index,
             )
         if message_type is MessageType.RESERVE:
             junction, start, end, priority = fields

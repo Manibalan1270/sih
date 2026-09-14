@@ -73,8 +73,11 @@ class TestFrameBudget:
 
     def test_intent_is_small(self) -> None:
         """INTENT is the only message on the continuous safety path, at 5 Hz per
-        robot, so its size sets the airtime floor for the whole fleet."""
-        assert M.packed_sizes(edge_id_bits=8)["INTENT"] == 26
+        robot, so its size sets the airtime floor for the whole fleet.
+
+        24 in section 3.4.1; 26 with the held task (defect 3); 28 with the plan
+        sequence and released-step index that execution by precedence reads."""
+        assert M.packed_sizes(edge_id_bits=8)["INTENT"] == 28
 
     def test_digest_slice_is_capped_to_fit(self) -> None:
         """CON-2 / FR-2.5: a rotating slice, not the whole table. A full 540-edge
@@ -234,7 +237,7 @@ class TestRangeValidation:
         """The companion: the frame above must be good apart from the one field."""
         codec = Codec(8)
         body = struct.pack(M.HEADER, int(MessageType.INTENT), 1, 1, 0) + struct.pack(
-            "<BBBBHHHBBBBH", 1, 2, 3, 4, 100, 200, 300, 10, 3, 90, 5, 0xFFFF
+            "<BBBBHHHBBBBHBB", 1, 2, 3, 4, 100, 200, 300, 10, 3, 90, 5, 0xFFFF, 0, 0
         )
         assert codec.decode(body + struct.pack("<H", crc16(body))) is not None
 
@@ -275,9 +278,13 @@ class TestCodecIdentity:
 
 class TestClassification:
     def test_safety_critical_set_matches_section_3_4_2(self) -> None:
+        """Section 3.4.2's five, plus PATH. PATH is the route booking that keeps
+        robots apart under route-level reservation, so it inherits every rule the
+        section applies to RESERVE: no acknowledgement, no retransmission on demand,
+        no connection (IF-4.5). It heals by repetition, as INTENT does."""
         assert M.SAFETY_CRITICAL == {
             MessageType.INTENT, MessageType.RESERVE, MessageType.ANNOUNCE,
-            MessageType.BID, MessageType.CLAIM,
+            MessageType.BID, MessageType.CLAIM, MessageType.PATH,
         }
 
     def test_telemetry_and_digest_are_not_safety_critical(self) -> None:
@@ -292,3 +299,74 @@ class TestClassification:
         telemetry = codec.decode(codec.encode(1, 2, 0, Telemetry(1, 2, 0, 100, 1, 1, 0)))
         assert intent.is_safety_critical
         assert not telemetry.is_safety_critical
+
+
+class TestPath:
+    """The route booking on the wire."""
+
+    def test_round_trips_including_a_past_offset(self) -> None:
+        """A mid-edge replan names the region it entered a moment ago, so offsets
+        must be signed."""
+        for bits in (8, 16):
+            codec = Codec(bits)
+            path = M.Path(
+                plan_seq=3, committed_ms=123_456, priority=100,
+                entries=((5, -4000), (6, 0), (7, 12_340), (8, 400_000)), goal_task_id=42,
+            )
+            decoded = codec.decode(codec.encode(1, 1, 1000, path))
+            assert decoded is not None
+            assert decoded.payload == path
+
+    def test_offsets_are_quantised_to_the_tick(self) -> None:
+        codec = Codec(8)
+        path = M.Path(plan_seq=1, committed_ms=0, priority=1, entries=((1, 1234),))
+        decoded = codec.decode(codec.encode(1, 1, 0, path)).payload
+        assert decoded.entries == ((1, 1220),)  # 1234 // 20 * 20
+
+    def test_far_future_offsets_saturate_rather_than_wrap(self) -> None:
+        """A wrapped offset would place a step in the past and free a resource that is
+        still booked. Saturating keeps it in the future, merely imprecise."""
+        codec = Codec(8)
+        path = M.Path(plan_seq=1, committed_ms=0, priority=1, entries=((1, 10_000_000),))
+        decoded = codec.decode(codec.encode(1, 1, 0, path)).payload
+        assert decoded.entries[0][1] == M.PATH_OFFSET_MAX * M.PATH_TICK_MS
+
+    @pytest.mark.parametrize("bits", [8, 16])
+    def test_the_longest_route_on_every_map_fits_one_frame(self, bits: int) -> None:
+        """Every plan must go out whole: a plan that needs two frames could have its
+        second half lost and leave peers with a route that ends mid-aisle."""
+        import itertools
+
+        from core.graph import Graph
+        from core.planner_astar import AStarPlanner
+        from tests.conftest import ALL_MAP_NAMES, MAPS_DIR
+
+        limit = M.max_path_nodes(bits)
+        for name in ALL_MAP_NAMES:
+            graph = Graph.load(MAPS_DIR / f"{name}.json")
+            if bits == 8 and len(graph.edges) > 255:
+                continue  # this map is only ever run at 16 bits
+            planner = AStarPlanner(graph)
+            stops = sorted(graph.task_endpoints | set(graph.parking_nodes))
+            longest = 0
+            for a, b in itertools.combinations(stops, 2):
+                route = planner.route(a, b)
+                if route is not None:
+                    longest = max(longest, len(route))
+            assert longest <= limit, (
+                f"{name}: a {longest}-node route does not fit a {limit}-node PATH at "
+                f"{bits}-bit ids"
+            )
+
+    def test_an_overlong_path_is_refused_at_encode(self) -> None:
+        codec = Codec(16)
+        too_many = tuple((i, i * 20) for i in range(M.max_path_nodes(16) + 1))
+        with pytest.raises(ValueError):
+            codec.encode(1, 1, 0, M.Path(plan_seq=1, committed_ms=0, priority=1, entries=too_many))
+
+    def test_a_truncated_path_is_discarded(self) -> None:
+        codec = Codec(8)
+        frame = codec.encode(1, 1, 0, M.Path(plan_seq=1, committed_ms=0, priority=1, entries=((1, 0), (2, 20))))
+        body = frame[:-2]
+        cut = body[:-2]  # drop one entry's worth
+        assert codec.decode(cut + struct.pack("<H", crc16(cut))) is None

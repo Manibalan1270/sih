@@ -62,6 +62,12 @@ INTENT_HORIZON = 3
 PEER_TIMEOUT_MS = 1500
 """FR-1.5 / NFR-1.11: silence after which a peer is declared lost."""
 
+PATH_REPEAT_MS = 1000
+"""PATH re-broadcast period while a route plan is active. A lost PATH frame heals
+within a second by repetition, the way INTENT does, so IF-4.5's ban on
+retransmission-on-demand holds on the safety path. At most one extra frame per
+second per robot, accounted separately from the NFR-1.12 auction budget."""
+
 AUCTION_WINDOW_MS = 300
 """FR-4.4 / NFR-1.8: sealed bid window, measured from the ANNOUNCE stamp."""
 

@@ -352,3 +352,86 @@ class ResourceTable:
         if not self.plans:
             return "no plans"
         return "; ".join(str(self.plans[rid]) for rid in sorted(self.plans))
+
+
+# ---------------------------------------------------------------------------
+# Wire form: a plan is a node list with one time per node, nothing else
+# ---------------------------------------------------------------------------
+
+
+def plan_entries(model: ResourceModel, plan: RoutePlan) -> list[tuple[int, int]]:
+    """``(node, enter_ms)`` per node of the plan -- everything the wire needs.
+
+    Every step is indexed by a node: a region by its junction, a station by its leaf,
+    a lane or corridor by the node it leaves from. So one time per node reconstructs
+    the whole plan against the map, and PATH need carry nothing about resources. The
+    time is when the robot enters that node's resource -- the region boundary for a
+    junction, the berth for a station, the lane start for anything else.
+    """
+    nodes, steps = plan.nodes, plan.steps
+    entries: list[tuple[int, int]] = []
+    last = len(nodes) - 1
+    cursor = 0
+    for index, node in enumerate(nodes):
+        if index == last:
+            if model.is_station(node) and last > 0:
+                entries.append((node, steps[-1].enter_ms))
+            else:
+                entries.append((node, steps[-1].exit_ms if steps else plan.committed_ms))
+            break
+        if model.has_region(node):
+            wanted = model.region(node)
+        else:
+            edge = model.graph.edge_between(node, nodes[index + 1])
+            wanted = model.lane(edge, nodes[index + 1]) if edge is not None else None
+            if model.is_station(nodes[index + 1]):
+                wanted = model.station(nodes[index + 1])
+        while cursor < len(steps) and steps[cursor].resource != wanted:
+            cursor += 1
+        if cursor >= len(steps):
+            raise ValueError(f"plan {plan} has no step for node {node}")
+        entries.append((node, steps[cursor].enter_ms))
+        if wanted.kind != STATION:
+            cursor += 1
+    return entries
+
+
+def plan_from_entries(
+    model: ResourceModel,
+    *,
+    robot_id: int,
+    plan_seq: int,
+    priority: int,
+    committed_ms: int,
+    entries: list[tuple[int, int]],
+) -> RoutePlan:
+    """Rebuild a plan from ``plan_entries`` output, against this robot's own map.
+
+    Lanes end when the next node's resource is entered, which carries any FIFO delay
+    the sender planned; regions and corridors take their fixed traversal time; the
+    closing station is booked for its depth plus the turnaround.
+    """
+    nodes = tuple(n for n, _ in entries)
+    times = [t for _, t in entries]
+    steps: list[Step] = []
+    last = len(nodes) - 1
+    for index, node in enumerate(nodes):
+        at = times[index]
+        if index == last:
+            if model.is_station(node) and last > 0:
+                steps.append(
+                    Step(model.station(node), at, at + model.station_in_ms(node) + config.STATION_HOLD_MS)
+                )
+            break
+        lane_from = at
+        if model.has_region(node):
+            steps.append(Step(model.region(node), at, at + model.region_cross_ms))
+            lane_from = at + model.region_cross_ms
+        nxt = nodes[index + 1]
+        if model.is_station(nxt) and index + 1 == last:
+            continue  # the berth is booked at the last node
+        edge = model.graph.edge_between(node, nxt)
+        if edge is None:
+            raise ValueError(f"{node}->{nxt} is not an edge on this map")
+        steps.append(Step(model.lane(edge, nxt), lane_from, max(lane_from, times[index + 1])))
+    return RoutePlan(robot_id, plan_seq, priority, committed_ms, nodes, tuple(steps))

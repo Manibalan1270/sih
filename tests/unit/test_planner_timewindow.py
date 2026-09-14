@@ -44,12 +44,14 @@ def build(nodes: dict[int, tuple[int, int]], edges: list[tuple[int, int, bool]])
 
 def from_station(model: ResourceModel, leaf: int, at_ms: int = 0) -> Start:
     """A robot resting at a station, about to leave."""
-    anchor, _ = model.anchor_of(leaf)
-    return Start(anchor, at_ms + model.station_in_ms(leaf), waitable=True)
+    return Start(leaf, at_ms, waitable=True)
 
 
-def steps_of(plan: RoutePlan, kind: int):
-    return [s for s in plan.steps if s.resource.kind == kind]
+def steps_of(plan: RoutePlan, kind: int, key: int | None = None):
+    return [
+        s for s in plan.steps
+        if s.resource.kind == kind and (key is None or s.resource.key == key)
+    ]
 
 
 def assert_no_waiting_inside(plan: RoutePlan, model: ResourceModel) -> None:
@@ -108,9 +110,9 @@ class TestHeadOnInACorridor:
 
         # The wait shows up before B's region, on the spur, not in the corridor:
         # the second robot's first region crossing starts later than it could have.
-        start = from_station(self.model, 20)
+        unhindered = self.model.station_in_ms(20)  # out of the berth to B's boundary
         (rb,) = [s for s in steps_of(second, REGION) if s.resource.key == 1]
-        assert rb.enter_ms > start.at_ms, "the second robot did not wait at the mouth"
+        assert rb.enter_ms > unhindered, "the second robot did not wait at the mouth"
 
     def test_the_corridor_and_its_exit_region_are_booked_as_one(self) -> None:
         """A robot may not enter the corridor unless it can also leave it: the exit
@@ -122,7 +124,7 @@ class TestHeadOnInACorridor:
         )
         (rb,) = [s for s in steps_of(first_free, REGION) if s.resource.key == 1]
         blocker = self.planner.plan(
-            self.table, start=Start(1, rb.enter_ms - 500, waitable=True), goal=21,
+            self.table, start=Start(21, rb.enter_ms - 500 - self.model.station_in_ms(21), waitable=True), goal=20,
             robot_id=3, priority=10, plan_seq=1, committed_ms=0,
         )
         assert blocker is not None
@@ -203,7 +205,7 @@ class TestFollowingOnATwoLaneEdge:
             robot_id=1, priority=10, plan_seq=1, committed_ms=0,
         )
         # Make the leader dawdle on the lane: stretch its lane step.
-        (lane,) = steps_of(leader, LANE)
+        (lane,) = steps_of(leader, LANE, key=0)
         slow = RoutePlan(
             leader.robot_id, leader.plan_seq, leader.priority, leader.committed_ms, leader.nodes,
             tuple(
@@ -218,7 +220,7 @@ class TestFollowingOnATwoLaneEdge:
             robot_id=2, priority=10, plan_seq=1, committed_ms=1,
         )
         assert follower is not None
-        (f_lane,) = steps_of(follower, LANE)
+        (f_lane,) = steps_of(follower, LANE, key=0)
         assert f_lane.enter_ms > lane.enter_ms, "the follower should enter second"
         assert f_lane.exit_ms >= lane.exit_ms + 10_000 + config.FOLLOW_GAP_MS, (
             "the follower planned to overtake a slow leader on a lane"
@@ -231,7 +233,7 @@ class TestFollowingOnATwoLaneEdge:
             self.table, start=from_station(self.model, 10, at_ms=3000), goal=20,
             robot_id=1, priority=10, plan_seq=1, committed_ms=0,
         )
-        (lane,) = steps_of(booked, LANE)
+        (lane,) = steps_of(booked, LANE, key=0)
         # Book it as if it will crawl the whole lane, exiting very late.
         crawl = RoutePlan(
             booked.robot_id, 1, 10, 0, booked.nodes,
@@ -246,8 +248,8 @@ class TestFollowingOnATwoLaneEdge:
             robot_id=2, priority=10, plan_seq=1, committed_ms=1,
         )
         assert later is not None
-        (l_lane,) = steps_of(later, LANE)
-        (crawl_lane,) = steps_of(crawl, LANE)
+        (l_lane,) = steps_of(later, LANE, key=0)
+        (crawl_lane,) = steps_of(crawl, LANE, key=0)
         # Either in first and out first, or in second and out second -- never in
         # first and out second, which would be overtaking on paper.
         if l_lane.enter_ms < crawl_lane.enter_ms:
