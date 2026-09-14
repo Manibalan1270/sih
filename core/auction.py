@@ -260,6 +260,7 @@ class Auctioneer:
         battery_pct: int,
         zone_eligible: bool,
         faulted: bool,
+        pickup_contested: bool = False,
     ) -> tuple[bool, str]:
         """Whether this robot may bid, and why not if it may not.
 
@@ -275,6 +276,8 @@ class Auctioneer:
             return False, f"battery {battery_pct}% below reserve (FR-4.15)"
         if not zone_eligible:
             return False, "task is not in this robot's zone or an adjacent one (FR-9.3)"
+        if pickup_contested:
+            return False, "another robot is already routed to this pickup (deferred bid filter)"
         return True, ""
 
     # -- bidding -------------------------------------------------------------

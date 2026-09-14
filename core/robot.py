@@ -810,6 +810,12 @@ class Robot:
         auctioneer = self.auctioneer
         assert auctioneer is not None
 
+        # A pickup already at the end of somebody's live plan has a robot inbound to
+        # it; bidding another robot onto the same node before that one clears is what
+        # produces destination churn at scale (20 robots, 6 stations). Computed once
+        # per tick, not per auction: the set does not change within a tick.
+        contested_pickups = self.bookings.plan_ends(exclude_robot=self.robot_id)
+
         for auction in sorted(
             auctioneer.open_auctions.values(), key=lambda a: a.task.task_id
         ):
@@ -826,6 +832,7 @@ class Robot:
                     else self.zone_eligible(auction.task.zone_id)
                 ),
                 faulted=self.state is State.FAULT,
+                pickup_contested=auction.task.pickup in contested_pickups,
             )
             if not allowed:
                 result.notes.append(f"not bidding on task {auction.task.task_id}: {reason}")
