@@ -14,6 +14,7 @@ state the fleet needs.
 py -m pip install -r requirements.txt
 py -m pytest -q                                        # full verification suite
 py scripts/visualize_map.py maps/benchmark_map.json --route 0 7
+py -m web.backend.app                                 # fleet dashboard at http://127.0.0.1:8000
 ```
 
 ## Layout
