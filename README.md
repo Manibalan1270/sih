@@ -186,6 +186,21 @@ All found while implementing; all should be corrected in v1.1.
     The SRS needs either a precondition on Appendix C -- that the order ranks only
     robots able to take the resource next -- or an explicit rule that physical occupancy
     is not subject to arbitration. The implementation now assumes the latter.
+13. **Task endpoints sit on junctions, and nothing in the SRS forbids it.** FR-10.8
+    places pickups and drops as nodes of the topology; it says nothing about their degree.
+    On the generated maps 47 of 48 endpoints (warehouse_zoned_30) and all 192
+    (warehouse_zoned_100) are 3- or 4-way junctions, so a robot dwelling at a pickup is
+    parked in an intersection -- the one place the rule "never come to rest inside a
+    conflict region" cannot be honoured, because the task requires the rest.
+
+    This is the structural cause beneath the 30-AMR failures that survived every local
+    rule. The literature's solvable class for pickup-and-delivery (Ma, Li, Kumar & Koenig,
+    AAMAS 2017, "well-formed" MAPD) requires that between any two endpoints a route exists
+    crossing no third endpoint. `Graph.is_well_formed()` measures it: 19 of 28 endpoint
+    pairs fail on benchmark_map, 996 of 1,128 on warehouse_zoned_30, 17,738 of 18,336 on
+    warehouse_zoned_100. Pinned as a strict xfail in `tests/unit/test_maps.py` so it must
+    flip when the maps are fixed. **Open**; the fix is Kiva-style maps in which every
+    endpoint is a degree-1 spur hanging off an aisle, as the parking bays already are.
 
 ## Status
 

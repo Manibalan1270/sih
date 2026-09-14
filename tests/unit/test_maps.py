@@ -351,3 +351,44 @@ class TestLanesDoNotOverlapWithoutAJunction:
                 f"{required} mm is needed. Robots there cannot be separated by "
                 f"arbitration, because they contend for no common node."
             )
+
+
+class TestWellFormedness:
+    """Ma, Li, Kumar & Koenig's solvable class for pickup-and-delivery (AAMAS 2017).
+
+    Two conditions. Enough parking places, none a task endpoint -- defect 6 gave us that
+    and ``test_bays_are_never_task_endpoints`` holds it. And between any two endpoints a
+    route that crosses no third, so a robot resting at an endpoint is never on someone's
+    only way through. That one we violate on every real map, and it is the structural
+    reason a robot at a pickup is parked in an intersection.
+    """
+
+    @pytest.mark.parametrize(
+        "map_name",
+        [
+            pytest.param(
+                name,
+                marks=pytest.mark.xfail(
+                    strict=True,
+                    reason=(
+                        "SRS defect 13: task endpoints sit on junctions, so most endpoint "
+                        "pairs have no route avoiding a third endpoint. Fixed by the "
+                        "Kiva-style maps that make every endpoint a degree-1 spur."
+                    ),
+                ),
+            )
+            if name != "loop_map"
+            else name
+            for name in ALL_MAP_NAMES
+        ],
+    )
+    def test_every_endpoint_pair_has_a_route_avoiding_other_endpoints(
+        self, map_name: str
+    ) -> None:
+        graph = Graph.load(f"maps/{map_name}.json")
+        failing = graph.is_well_formed()
+        pairs = len(graph.task_endpoints) * (len(graph.task_endpoints) - 1) // 2
+        assert not failing, (
+            f"{map_name}: {len(failing)} of {pairs} endpoint pairs are not well-formed; "
+            f"first: {failing[:5]}"
+        )

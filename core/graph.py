@@ -112,6 +112,12 @@ class Graph:
     """Whether every edge runs purely horizontally or vertically. Determines which
     geometric lower bound ``straight_line_ms`` may use; see its docstring."""
 
+    pickup_nodes: tuple[int, ...] = ()
+    drop_nodes: tuple[int, ...] = ()
+    """Where tasks begin and end. Carried on the graph rather than only consumed by
+    the task generator, because where a robot must *stop* is a structural property of
+    the map -- see ``is_well_formed``."""
+
     # -- construction --------------------------------------------------------
 
     def __post_init__(self) -> None:
@@ -260,6 +266,50 @@ class Graph:
                     seen.add(neighbour)
                     stack.append(neighbour)
         return frozenset(seen)
+
+    @property
+    def task_endpoints(self) -> frozenset[int]:
+        return frozenset(self.pickup_nodes) | frozenset(self.drop_nodes)
+
+    def is_well_formed(self) -> list[tuple[int, int]]:
+        """Endpoint pairs with no route between them that avoids every other endpoint.
+
+        Empty means the map is *well-formed* in the sense of Ma, Li, Kumar and Koenig
+        (Lifelong Multi-Agent Path Finding for Online Pickup and Delivery Tasks, AAMAS
+        2017): the solvable class of pickup-and-delivery instances, defined by two
+        conditions -- at least as many parking places as robots, none of them a task
+        endpoint (defect 6 gave us that), and between any two endpoints a path that
+        crosses no third. The second is what makes every task eventually assignable
+        with no deadlock: a robot resting at an endpoint never stands on anyone's only
+        way through.
+
+        Our maps violate it wholesale. Pickups and drops sit on 3- and 4-way junctions
+        -- 47 of 48 endpoints on warehouse_zoned_30, all 192 on warehouse_zoned_100 --
+        so a robot dwelling at a pickup is parked in an intersection. That is the one
+        place the rule "never come to rest inside a conflict region" cannot be honoured,
+        because the task requires the rest. Every collision and cycle at 30 AMRs that
+        survived the local rules traces back to it. Recorded as SRS defect 13.
+
+        BFS from each endpoint over the graph with every *other* endpoint removed. Pairs
+        are returned in id order so the report is stable.
+        """
+        endpoints = self.task_endpoints
+        failing: list[tuple[int, int]] = []
+        for start in sorted(endpoints):
+            seen = {start}
+            stack = [start]
+            while stack:
+                for neighbour, _ in self.neighbours(stack.pop()):
+                    if neighbour in seen:
+                        continue
+                    seen.add(neighbour)
+                    if neighbour in endpoints:
+                        continue  # reached, but do not pass through
+                    stack.append(neighbour)
+            for goal in sorted(endpoints):
+                if goal > start and goal not in seen:
+                    failing.append((start, goal))
+        return failing
 
     def is_connected(self) -> bool:
         if not self.nodes:
@@ -418,6 +468,8 @@ class Graph:
             description=str(data.get("description", "")),
             nodes=nodes,
             edges=edges,
+            pickup_nodes=tuple(int(n) for n in data.get("pickup_nodes", ())),
+            drop_nodes=tuple(int(n) for n in data.get("drop_nodes", ())),
         )
 
     @classmethod
