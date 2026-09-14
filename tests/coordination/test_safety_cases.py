@@ -41,7 +41,9 @@ from core.timewindows import (
     Step,
     conflict_between,
 )
+from benchmark.runner import compare_configurations, run_seed
 from simulator.scenario import AuctionAllocator, build
+from simulator.scenario import RoundRobinAllocator
 
 
 def coordinated(seed: int = 0, *, tasks: int | None = None):
@@ -221,6 +223,45 @@ class TestTC1CrossingJunction:
         sim = coordinated(0)
         sim.run(max_ms=1_800_000)
         assert sum(r.metrics.yields_lost for r in sim.engine.robots) > 0
+
+    @pytest.mark.slow
+    def test_ac2_zero_collisions_across_thirty_bench3_seeds(self) -> None:
+        """AC-2: Configuration B is safe across the required seed floor."""
+        for seed in range(30):
+            sim = coordinated(seed)
+            assert sim.run(max_ms=1_800_000), f"seed {seed} did not finish"
+            assert sim.engine.coordination_failures == [], (
+                f"seed {seed}: {len(sim.engine.coordination_failures)} coordination failures"
+            )
+            assert sim.engine.stall_report is None or not sim.engine.stall_report.is_deadlocked, (
+                f"seed {seed}: deadlock cycle reported"
+            )
+
+    @pytest.mark.slow
+    def test_ac3_b_reduces_mean_makespan_by_twenty_percent(self) -> None:
+        """AC-3: Configuration B must beat A on the same ten task sets."""
+        results_a = [
+            run_seed(
+                scenarios.get("bench3"),
+                seed=seed,
+                config_name="A",
+                allocator=RoundRobinAllocator(),
+            )
+            for seed in range(10)
+        ]
+        results_b = [
+            run_seed(
+                scenarios.get("bench3"),
+                seed=seed,
+                config_name="B",
+                allocator=AuctionAllocator(),
+            )
+            for seed in range(10)
+        ]
+        summary = compare_configurations(results_a, results_b)
+        assert summary["collision_total_b"] == 0
+        assert summary["coordination_failures_b"] == 0
+        assert summary["makespan_mean_b"] <= 0.8 * summary["makespan_mean_a"], summary
 
 
 @pytest.mark.tc

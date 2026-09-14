@@ -116,10 +116,23 @@ class AuctionAllocator:
     happens -- announcing finished work would have it delivered twice."""
 
     reannounce_after_ms: int = config.AUCTION_WINDOW_MS + config.CLAIM_TIMEOUT_MS
+    accepting: bool = True
+
+    def stop(self) -> None:
+        """Stop originating new ANNOUNCE frames while held work continues.
+
+        The gateway remains on the mesh so it can absorb CLAIM, INTENT and
+        COMPLETE frames for work already in flight. This is the handoff point
+        used by AC-4 when an external order source is paused.
+        """
+        self.accepting = False
 
     def tick(self, sim: "Simulation", now_ms: int) -> None:
         assert sim.mesh is not None, "the auction allocator needs a mesh"
         self._absorb_claims(sim)
+
+        if not self.accepting:
+            return
 
         # A task handed back is unclaimed again, whatever we previously overheard.
         for task_id in sim.reannounced:

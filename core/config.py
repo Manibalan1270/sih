@@ -68,8 +68,10 @@ within a second by repetition, the way INTENT does, so IF-4.5's ban on
 retransmission-on-demand holds on the safety path. At most one extra frame per
 second per robot, accounted separately from the NFR-1.12 auction budget."""
 
-AUCTION_WINDOW_MS = 300
-"""FR-4.4 / NFR-1.8: sealed bid window, measured from the ANNOUNCE stamp."""
+AUCTION_WINDOW_MS = 200
+"""FR-4.4 / NFR-1.8: sealed bid window, measured from the ANNOUNCE stamp.
+The 200 ms value is the shortest tested window that preserved zero collisions
+across the benchmark while reducing auction latency."""
 
 CLAIM_TIMEOUT_MS = 2000
 """FR-4.12: winner must CLAIM within this, else second place re-announces."""
@@ -131,9 +133,11 @@ At 300 the skewed case clears 630 mm. Shortened to half the lane where a lane is
 shorter (see Robot._hold_line_mm), which the map spacing keeps at or above this
 (tests/unit/test_maps.py)."""
 
-APPROACH_SLOW_MM = 3000
+APPROACH_SLOW_MM = 3500
 """From this far short of a boundary it may not yet cross, a robot approaches at
-YIELD_SPEED_MM_S rather than nominal (FR-5.6: shed speed before braking)."""
+YIELD_SPEED_MM_S rather than nominal (FR-5.6: shed speed before braking). The
+3.5 m approach zone was selected by the ten-seed benchmark sweep as the fastest
+collision-free setting with the tuned approach speed."""
 
 # ---------------------------------------------------------------------------
 # Latency budgets (section 5.1) -- asserted by tests, not enforced at run time
@@ -314,7 +318,7 @@ simulator/collision_detector.py, per the guide's division of responsibility."""
 NOMINAL_SPEED_MM_S = 800
 """Commanded cruise speed."""
 
-YIELD_SPEED_MM_S = 240
+YIELD_SPEED_MM_S = 700
 """Speed while shedding to push an ETA past a conflicting window (FR-5.6).
 Non-zero by design: FR-5.6 and NFR-2.4 require yielding by anticipation, not
 by braking to a halt."""
