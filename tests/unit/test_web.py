@@ -121,3 +121,34 @@ class TestRunControl:
 def test_run_request_defaults_match_the_cli() -> None:
     request = RunRequest()
     assert (request.scenario, request.seed, request.waves) == ("bench3", 1, 4)
+
+
+class TestExternalSource:
+    """The Webots supervisor hosts its own run and pushes frames here."""
+
+    @pytest.fixture(autouse=True)
+    def _stop_after(self):
+        yield
+        controller.stop()
+        controller.external_map = controller.external_frame = None
+
+    def test_pushed_frames_are_what_the_browser_sees(self, sim) -> None:
+        with TestClient(app) as client:
+            assert client.post("/api/external/frame", json={"now_ms": 1}).status_code == 409
+            assert client.post("/api/external/map", json=telemetry.map_payload(sim)).status_code == 200
+            frame = telemetry.snapshot(sim)
+            frame["source"] = "webots"
+            assert client.post("/api/external/frame", json=frame).status_code == 200
+
+            shown = client.get("/api/state").json()
+            assert shown["source"] == "webots"
+            assert shown["now_ms"] == sim.engine.now_ms
+            assert client.get("/api/status").json()["source"] == "webots"
+            assert len(client.get("/api/map").json()["nodes"]) == len(sim.graph.nodes)
+
+    def test_a_dashboard_run_replaces_a_stale_external_one(self, sim) -> None:
+        with TestClient(app) as client:
+            client.post("/api/external/map", json=telemetry.map_payload(sim))
+            client.post("/api/external/frame", json=telemetry.snapshot(sim))
+            client.post("/api/run", json={"scenario": "bench3", "seed": 2, "speed": 64})
+            assert client.get("/api/status").json()["source"] == "dashboard"

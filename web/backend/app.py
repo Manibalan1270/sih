@@ -45,6 +45,8 @@ and still a few kilobytes a frame."""
 DEFAULT_MAX_MS = 1_800_000
 """Simulated-time cap per run, matching scripts/run_scenario.py."""
 
+EXTERNAL_TIMEOUT_S = 3.0
+
 
 class RunRequest(BaseModel):
     scenario: str = "bench3"
@@ -76,6 +78,13 @@ class RunController:
     _stop: threading.Event = field(default_factory=threading.Event)
     _generation: int = 0
 
+    external_map: dict[str, Any] | None = None
+    external_frame: dict[str, Any] | None = None
+    external_at: float = 0.0
+    """A run hosted elsewhere -- the Webots supervisor -- pushing its own frames.
+    While those keep arriving the dashboard shows them instead of its own run;
+    when they stop for EXTERNAL_TIMEOUT_S it falls back."""
+
     # -- control ---------------------------------------------------------------
 
     def start(self, request: RunRequest) -> dict[str, Any]:
@@ -100,6 +109,7 @@ class RunController:
             self.paused = False
             self.finished = False
             self.error = None
+            self.external_map = self.external_frame = None
             self._generation += 1
             generation = self._generation
         self._stop = threading.Event()
@@ -168,12 +178,51 @@ class RunController:
                 if self._generation == generation:
                     self.error = f"{type(exc).__name__}: {exc}"
 
+    # -- an external run pushing frames --------------------------------------
+
+    def accept_external_map(self, data: dict[str, Any]) -> None:
+        with self.lock:
+            self.external_map = data
+            self.external_frame = None
+            self.external_at = time.time()
+            self._generation += 1
+
+    def accept_external_frame(self, data: dict[str, Any]) -> bool:
+        with self.lock:
+            if self.external_map is None:
+                return False
+            self.external_frame = data
+            self.external_at = time.time()
+            return True
+
+    def _external_live(self) -> bool:
+        return (
+            self.external_map is not None
+            and self.external_frame is not None
+            and time.time() - self.external_at < EXTERNAL_TIMEOUT_S
+        )
+
     # -- views -----------------------------------------------------------------
 
     def status(self) -> dict[str, Any]:
         with self.lock:
+            if self._external_live():
+                frame = self.external_frame
+                return {
+                    "running": not frame.get("finished", False),
+                    "paused": False,
+                    "finished": frame.get("finished", False),
+                    "speed": None,
+                    "error": None,
+                    "source": frame.get("source", "external"),
+                    "scenario": frame.get("scenario"),
+                    "seed": frame.get("seed"),
+                    "robots": len(frame.get("robots", ())),
+                    "now_ms": frame.get("now_ms", 0),
+                }
             sim = self.sim
             return {
+                "source": "dashboard",
                 "running": sim is not None and not self.finished and self.error is None,
                 "paused": self.paused,
                 "finished": self.finished,
@@ -187,9 +236,17 @@ class RunController:
 
     def frame(self) -> dict[str, Any] | None:
         with self.lock:
+            if self._external_live():
+                data = dict(self.external_frame)
+                data.setdefault("source", "external")
+                data["paused"] = False
+                data["speed"] = None
+                data["error"] = None
+                return data
             if self.sim is None:
                 return None
             data = telemetry.snapshot(self.sim, finished=self.finished)
+        data["source"] = "dashboard"
         data["paused"] = self.paused
         data["speed"] = self.speed
         data["error"] = self.error
@@ -197,6 +254,8 @@ class RunController:
 
     def map(self) -> dict[str, Any] | None:
         with self.lock:
+            if self._external_live() or (self.external_map is not None and self.sim is None):
+                return self.external_map
             if self.sim is None:
                 return None
             return telemetry.map_payload(self.sim)
@@ -284,6 +343,21 @@ class SpeedRequest(BaseModel):
 @app.post("/api/speed")
 def speed(request: SpeedRequest) -> dict[str, Any]:
     return controller.set_speed(request.speed)
+
+
+@app.post("/api/external/map")
+def external_map(data: dict[str, Any]) -> dict[str, Any]:
+    """The Webots supervisor announcing a run it hosts. Reading only: the
+    dashboard receives geometry and frames; it sends nothing back."""
+    controller.accept_external_map(data)
+    return {"accepted": True}
+
+
+@app.post("/api/external/frame")
+def external_frame(data: dict[str, Any]) -> dict[str, Any]:
+    if not controller.accept_external_frame(data):
+        raise HTTPException(409, "send the map first")
+    return {"accepted": True}
 
 
 @app.websocket("/ws/telemetry")

@@ -252,7 +252,7 @@
     $("c-frames").textContent = c.frames_sent.toLocaleString();
     $("c-stopped").textContent = fmtSeconds(c.stopped_ms);
     $("c-makespan").textContent = f.finished ? fmtSeconds(c.makespan_ms) : "—";
-    $("fleet-count").textContent = `${f.robots.length} robots · ${f.scenario} seed ${f.seed}`;
+    $("fleet-count").textContent = `${f.robots.length} robots · ${f.scenario} seed ${f.seed}${f.source === "webots" ? " · from Webots" : ""}`;
 
     const note = $("run-note");
     if (f.error) {
@@ -270,7 +270,7 @@
 
     running = !f.finished && !f.error;
     paused = f.paused;
-    $("pause").disabled = !running;
+    $("pause").disabled = !running || f.source !== "dashboard";
     $("pause").textContent = paused ? "Resume" : "Pause";
   }
 
