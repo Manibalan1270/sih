@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROBOTON — announce task</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app">
+
+<nav class="rail">
+  <a class="rail-mark" href="/">
+    <span class="rail-mark-word">ROBOTON</span>
+    <span class="rail-mark-sub">No central planner. No dispatcher. The fleet decides.</span>
+  </a>
+  <ul class="rail-nav">
+    <li><a href="/">Fleet overview</a></li>
+    <li><a href="/orders" class="current" aria-current="page">Announce task</a></li>
+    <li><a href="/simulation">Live floor</a></li>
+  </ul>
+  <div class="rail-foot">
+    <span class="lamp" id="lamp" data-state="idle"></span>
+    <span class="rail-foot-label" id="lamp-label">no run</span>
+  </div>
+</nav>
+
+<main class="sheet">
+  <header class="sheet-head">
+    <div>
+      <h1 class="title">Announce task</h1>
+      <p class="subtitle" id="run-line">Nothing running yet</p>
+    </div>
+    <span class="status" id="run-status">idle</span>
+  </header>
+
+  <div class="announce-layout">
+    <section class="picker">
+      <div class="picker-stage">
+        <svg id="map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" aria-label="Pick stations on the warehouse floor">
+          <g id="layer-lanes"></g>
+          <g id="layer-nodes"></g>
+          <g id="layer-robots"></g>
+        </svg>
+        <p class="picker-hint">Click a station to set <b>collect</b>, then another to set <b>deliver</b>.</p>
+        <div id="empty" class="empty">
+          <p class="empty-title">No run in progress</p>
+          <p>Work is announced to a fleet that is already running. Start one from the
+            <a href="/">fleet overview</a>, then come back.</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="card">
+        <p class="card-label">New task</p>
+
+        <div class="journey">
+          <div class="journey-end">
+            <span class="field-label">Collect</span>
+            <div class="value unset" id="pickup-name">not set</div>
+          </div>
+          <span class="journey-arrow">&rarr;</span>
+          <div class="journey-end">
+            <span class="field-label">Deliver</span>
+            <div class="value unset" id="drop-name">not set</div>
+          </div>
+        </div>
+
+        <form id="order-form" class="stack" autocomplete="off">
+          <label class="field">
+            <span>Collect at</span>
+            <select id="pickup" name="pickup" required></select>
+          </label>
+          <label class="field">
+            <span>Deliver to</span>
+            <select id="drop" name="drop" required></select>
+          </label>
+          <label class="field">
+            <span>Priority</span>
+            <input id="priority" name="priority" type="number" min="0" max="255" value="10" required>
+            <span class="field-hint">0–255. Breaks a tie; a waiting task also gains ground as it ages.</span>
+          </label>
+          <div class="form-row">
+            <button type="submit" id="submit-order" class="btn primary" disabled>Announce task</button>
+            <button type="button" id="clear-order" class="btn">Clear</button>
+          </div>
+        </form>
+
+        <p class="note" id="order-note"></p>
+
+        <p class="gateway-note">
+          The gateway puts this on the mesh and stops there. No AMR is named: every robot
+          in range prices the job for itself and the lowest bid takes it.
+        </p>
+      </section>
+
+      <section class="card">
+        <p class="card-label">Work in the system</p>
+        <div class="table-wrap">
+          <table id="task-table">
+            <thead>
+              <tr><th style="width:78px">Task</th><th>Journey</th><th style="width:38px">Pri</th><th style="width:86px">Status</th><th style="width:64px">AMR</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="/static/orders.js"></script>
+</body>
+</html>

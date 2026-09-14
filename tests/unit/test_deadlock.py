@@ -196,8 +196,9 @@ class TestStallWatcher:
         detector reports normal operation as a deadlock."""
         from core import config
 
+        region_cross_ms = 2 * config.JUNCTION_FOOTPRINT_MM * 1000 // config.NOMINAL_SPEED_MM_S
         assert StallWatcher().window_ms > config.MARGIN_DEGRADED_MS
-        assert StallWatcher().window_ms > config.JUNCTION_OCCUPANCY_MS
+        assert StallWatcher().window_ms > region_cross_ms
 
     def test_a_motionless_working_fleet_reads_as_stalled(self, benchmark_map: Graph) -> None:
         """Checked through the watcher rather than by stepping the engine: step()

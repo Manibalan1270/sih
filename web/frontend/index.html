@@ -3,114 +3,144 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ROBOTON fleet view</title>
+<title>ROBOTON — fleet overview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-<header class="topbar">
-  <div class="brand">
-    <span class="brand-name">ROBOTON</span>
-    <span class="brand-sub">fleet view · no central planner, no central allocator</span>
+<body class="app">
+
+<nav class="rail">
+  <a class="rail-mark" href="/">
+    <span class="rail-mark-word">ROBOTON</span>
+    <span class="rail-mark-sub">No central planner. No dispatcher. The fleet decides.</span>
+  </a>
+  <ul class="rail-nav">
+    <li><a href="/" class="current" aria-current="page">Fleet overview</a></li>
+    <li><a href="/orders">Announce task</a></li>
+    <li><a href="/simulation">Live floor</a></li>
+  </ul>
+  <div class="rail-foot">
+    <span class="lamp" id="lamp" data-state="idle"></span>
+    <span class="rail-foot-label" id="lamp-label">no run</span>
   </div>
+</nav>
 
-  <form id="run-form" class="run-control" autocomplete="off">
-    <label>Scenario
-      <select id="scenario" name="scenario"></select>
-    </label>
-    <label>Seed
-      <input id="seed" name="seed" type="number" min="0" value="1">
-    </label>
-    <label>Robots
-      <input id="robots" name="robots" type="number" min="1" placeholder="default">
-    </label>
-    <label>Speed
-      <select id="speed" name="speed">
-        <option value="1">1×</option>
-        <option value="2" selected>2×</option>
-        <option value="4">4×</option>
-        <option value="8">8×</option>
-        <option value="16">16×</option>
-      </select>
-    </label>
-    <button type="submit" id="start" class="btn primary">Start run</button>
-    <button type="button" id="pause" class="btn" disabled>Pause</button>
-  </form>
-
-  <div class="clock">
-    <span class="clock-label">sim clock</span>
-    <span id="clock" class="clock-value">00:00.0</span>
-  </div>
-</header>
-
-<main class="workspace">
-  <section class="floor" aria-label="Warehouse floor">
-    <svg id="map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
-      <defs>
-        <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1="0" y1="0" x2="0" y2="6" stroke="var(--hazard)" stroke-width="2"/>
-        </pattern>
-      </defs>
-      <g id="layer-zones"></g>
-      <g id="layer-lanes"></g>
-      <g id="layer-nodes"></g>
-      <g id="layer-routes"></g>
-      <g id="layer-waits"></g>
-      <g id="layer-robots"></g>
-    </svg>
-    <div id="empty" class="empty">
-      <p class="empty-title">No run in progress</p>
-      <p>Pick a scenario and press <strong>Start run</strong>. The fleet appears here the moment the first robot moves.</p>
+<main class="sheet">
+  <header class="sheet-head">
+    <div>
+      <h1 class="title">Fleet overview</h1>
+      <p class="subtitle" id="run-line">Nothing running yet</p>
     </div>
-    <div class="legend">
-      <span><i class="sw sw-moving"></i>moving</span>
-      <span><i class="sw sw-yield"></i>yielding</span>
-      <span><i class="sw sw-idle"></i>idle</span>
-      <span><i class="sw sw-charging"></i>charging</span>
-      <span><i class="sw sw-fault"></i>fault</span>
-      <span><i class="sw sw-pickup"></i>pickup</span>
-      <span><i class="sw sw-drop"></i>drop</span>
-      <span><i class="sw sw-bay"></i>bay</span>
-      <span><i class="sw sw-wait"></i>waiting for</span>
+    <span class="status" id="run-status">idle</span>
+  </header>
+
+  <div class="grid">
+    <div class="col-5 stack">
+      <section class="card">
+        <p class="card-label">Delivered</p>
+        <p class="hero-figure"><span class="now" id="c-done">0</span><span class="of">/<span id="c-total">0</span></span></p>
+        <p class="hero-unit">tasks collected and dropped</p>
+        <div class="meter"><span id="c-progress"></span></div>
+        <p class="hero-note" id="run-note">Start a run to put the fleet to work.</p>
+      </section>
+
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-value" id="c-coll">0</div>
+          <div class="stat-label">Collisions</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="c-fail">0</div>
+          <div class="stat-label">Coordination failures</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="c-frames">0</div>
+          <div class="stat-label">Frames on the mesh</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="c-stopped">0 s</div>
+          <div class="stat-label">Fleet time stopped</div>
+        </div>
+      </div>
     </div>
-  </section>
 
-  <aside class="panel">
-    <section class="counters">
-      <div class="counter big">
-        <span class="counter-label">tasks completed</span>
-        <span class="counter-value"><span id="c-done">0</span><span class="of">/<span id="c-total">0</span></span></span>
-        <div class="bar"><div id="c-progress" class="bar-fill"></div></div>
+    <a class="col-7 watch" href="/simulation">
+      <div class="watch-stage">
+        <svg id="mini" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" aria-label="Live warehouse floor">
+          <g id="mini-lanes"></g>
+          <g id="mini-nodes"></g>
+          <g id="mini-robots"></g>
+        </svg>
+        <dl class="titleblock">
+          <div><dt>Map</dt><dd id="tb-map">—</dd></div>
+          <div><dt>Seed</dt><dd id="tb-seed">—</dd></div>
+          <div><dt>Clock</dt><dd id="tb-clock">00:00</dd></div>
+          <div><dt>Scale</dt><dd id="tb-scale">—</dd></div>
+        </dl>
       </div>
-      <div class="counter-grid">
-        <div class="counter"><span class="counter-label">collisions</span><span id="c-coll" class="counter-value alert-when-nonzero">0</span></div>
-        <div class="counter"><span class="counter-label">yields</span><span id="c-yields" class="counter-value">0</span></div>
-        <div class="counter"><span class="counter-label">pending</span><span id="c-pending" class="counter-value">0</span></div>
-        <div class="counter"><span class="counter-label">frames on mesh</span><span id="c-frames" class="counter-value">0</span></div>
-        <div class="counter"><span class="counter-label">fleet stopped</span><span id="c-stopped" class="counter-value">0 s</span></div>
-        <div class="counter"><span class="counter-label">makespan</span><span id="c-makespan" class="counter-value">—</span></div>
+      <div class="watch-foot">
+        <div>
+          <strong>Watch the floor</strong>
+          <span id="watch-sub">— full view, routes and right-of-way</span>
+        </div>
+        <span class="watch-arrow">&rarr;</span>
       </div>
-      <p id="run-note" class="run-note"></p>
-    </section>
+    </a>
 
-    <section class="fleet">
-      <div class="fleet-head">
-        <span>fleet</span>
-        <span id="fleet-count">0 robots</span>
-      </div>
-      <div class="fleet-scroll">
+    <section class="col-7 card">
+      <p class="card-label">Fleet</p>
+      <div class="table-wrap">
         <table id="fleet-table">
           <thead>
-            <tr><th>id</th><th>state</th><th>battery</th><th>task</th><th>holding for</th></tr>
+            <tr><th style="width:44px">AMR</th><th style="width:84px">State</th><th style="width:92px">Battery</th><th>Task</th><th style="width:92px">Holding for</th></tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
     </section>
-  </aside>
+
+    <section class="col-5 card">
+      <p class="card-label">Run control</p>
+      <form id="run-form" class="stack" autocomplete="off">
+        <label class="field">
+          <span>Scenario</span>
+          <select id="scenario" name="scenario"></select>
+        </label>
+        <div class="form-row">
+          <label class="field">
+            <span>Seed</span>
+            <input id="seed" name="seed" type="number" min="0" value="1">
+          </label>
+          <label class="field">
+            <span>AMRs</span>
+            <input id="robots" name="robots" type="number" min="1" placeholder="default">
+          </label>
+          <label class="field">
+            <span>Tasks</span>
+            <input id="tasks" name="tasks" type="number" min="1" placeholder="default">
+          </label>
+        </div>
+        <label class="field">
+          <span>Speed</span>
+          <select id="speed" name="speed">
+            <option value="1">1× real time</option>
+            <option value="2" selected>2×</option>
+            <option value="4">4×</option>
+            <option value="8">8×</option>
+            <option value="16">16×</option>
+          </select>
+        </label>
+        <div class="form-row">
+          <button type="submit" id="start" class="btn primary">Start run</button>
+          <button type="button" id="pause" class="btn" disabled>Pause</button>
+        </div>
+      </form>
+    </section>
+  </div>
 </main>
 
-<script src="/static/app.js"></script>
+<script src="/static/dashboard.js"></script>
 </body>
 </html>

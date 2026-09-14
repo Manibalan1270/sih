@@ -264,6 +264,46 @@ class TestTC1CrossingJunction:
         assert summary["makespan_mean_b"] <= 0.8 * summary["makespan_mean_a"], summary
 
 
+class TestYieldSpeedDoesNotGovernRegionSafety:
+    """Why it is safe to raise YIELD_SPEED_MM_S.
+
+    A robot does slow to yield speed while numerically within JUNCTION_FOOTPRINT_MM
+    of a node it just departed -- once its region step is entered, _next_gate moves
+    on to gate the *next* step (a lane, say), and if that lane is still booked to
+    someone else the robot sheds to yield speed on approach to it, before it has
+    physically cleared the region's footprint. Measured directly: at seed 0, task
+    count 6, robot 1 sits at YIELD_SPEED_MM_S while 4mm past node 4, 1196mm short of
+    the footprint radius.
+
+    That is not the collision exposure JUNCTION_FOOTPRINT_MM exists to bound,
+    though. The exposure is two robots occupying the same node's footprint from
+    perpendicular edges at once, and a second robot cannot get a region booking
+    while a live peer still *reports* that node as current -- _may_enter's REGION
+    branch (core/robot.py) blocks on any peer whose current_node equals the region,
+    independent of the time-window bookkeeping and independent of speed. So the
+    thing that actually needs checking is not "does speed ever dip near a
+    footprint" (it does, structurally, regardless of YIELD_SPEED_MM_S's value) but
+    "do collisions and coordination failures stay at zero regardless of the value"
+    -- checked here at both the shipped value and a substantially higher one.
+    """
+
+    @pytest.mark.parametrize("yield_speed", [50, 600, 799])
+    def test_zero_collisions_across_seeds_at_this_yield_speed(
+        self, monkeypatch: pytest.MonkeyPatch, yield_speed: int
+    ) -> None:
+        monkeypatch.setattr(config, "YIELD_SPEED_MM_S", yield_speed)
+        for seed in range(5):
+            sim = coordinated(seed=seed)
+            assert sim.run(max_ms=1_800_000), f"seed {seed} did not finish"
+            assert sim.engine.collisions == [], (
+                f"seed {seed} at yield {yield_speed}: {len(sim.engine.collisions)} collisions"
+            )
+            assert sim.engine.coordination_failures == [], (
+                f"seed {seed} at yield {yield_speed}: "
+                f"{len(sim.engine.coordination_failures)} coordination failures"
+            )
+
+
 @pytest.mark.tc
 class TestTC2SingleLaneCorridor:
     """Two AMRs approach a single-lane corridor from opposite ends.

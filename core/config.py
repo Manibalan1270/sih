@@ -323,12 +323,18 @@ YIELD_SPEED_MM_S = 240
 Non-zero by design: FR-5.6 and NFR-2.4 require yielding by anticipation, not
 by braking to a halt.
 
-The benchmark sweep tried 700 to chase the AC-3 makespan target, but that
-pushes reach at yield speed to 490 mm against a 1200 mm JUNCTION_FOOTPRINT_MM --
-tests/unit/test_geometry.py::test_and_far_less_at_yield_speed exists precisely to
-keep this defect-10 margin bounded, and 700 blows past it. Held at 240 (168 mm
-reach) until a yield speed increase ships with either a smaller footprint or a
-JUNCTION_OCCUPANCY_MS fix, not just a benchmark win."""
+Briefly raised to 600 and **reverted**. The reasoning for raising it still looks
+sound -- this constant does not size the junction reservation (see
+JUNCTION_FOOTPRINT_MM's docstring), and
+tests/coordination/test_safety_cases.py::TestYieldSpeedDoesNotGovernRegionSafety
+measured zero collisions at 50, 600 and 799. But every one of those runs was
+`bench3`, three AMRs, and a `visual30` run at 30 reported three collisions. The
+evidence for 600 does not cover the density the collisions appeared at, so the
+value goes back to the one the fleet has always run clean on.
+
+Raise it again only alongside a 30-AMR result: `py scripts/check_yield_at_density.py`
+runs a seed under both speeds, and the safety test above should be widened past
+`bench3` at the same time. AC-3 is worth less than a collision."""
 
 MIN_SPEED_MM_S = 80
 """Floor on commanded speed while still notionally moving."""
@@ -346,15 +352,6 @@ Without this the collision detector treats every aisle as single-file and report
 collision every time two robots pass, which is not a coordination failure at all: it
 is the model being wrong. On the benchmark map that accounted for every remaining
 collision after junction arbitration was working."""
-
-JUNCTION_OCCUPANCY_MS = 700
-"""How long one AMR occupies a junction while crossing it.
-
-Roughly the time to clear its own footprint at cruise: 500 mm of diameter at
-800 mm/s is 625 ms, rounded up for the approach and exit. Fixed rather than
-computed per robot because ASM-6 makes the fleet homogeneous in speed and size;
-varying it would imply a heterogeneity the specification does not permit and OI-4
-records as out of scope."""
 
 ENTRY_COMMIT_MM = 150
 """Distance into a single-lane corridor past which a robot is committed.
@@ -427,12 +424,26 @@ Only the arrive-while-the-other-departs pairing is exposed. Both-arriving gives
 sqrt((d1-L)**2 + (d2+L)**2) and both-departing sqrt((d1+L)**2 + (d2-L)**2), and
 neither can fall below the lane offset itself. A turn is what crosses the lanes.
 
-**Not yet enforced, and this is the open defect.** JUNCTION_OCCUPANCY_MS reserves a
-junction for a fixed 700 ms, which is 560 mm of travel at NOMINAL_SPEED_MM_S and only
-168 mm at YIELD_SPEED_MM_S -- against a footprint that extends 1200 mm each side. A
-yielding robot therefore outlives its own claim and crosses the corner unreserved.
-Every remaining bench3 failure at 3 AMRs is this. See tests/unit/test_geometry.py,
-which pins the derivation, and README's defect 10.
+**Historical defect 10, resolved by the Phase-12 rewrite.** The old per-junction
+arbitration.py reserved a junction for a fixed JUNCTION_OCCUPANCY_MS (700 ms) --
+560 mm of travel at NOMINAL_SPEED_MM_S, against a footprint extending 1200 mm each
+side. A robot could outlive its own claim and cross the corner unreserved. Route-
+level, time-window reservations (core/timewindows.py::ResourceModel.region_cross_ms)
+replaced it: the window is derived from this constant directly (two footprints of
+travel at nominal speed), not guessed, so it always exactly covers a crossing.
+JUNCTION_OCCUPANCY_MS has been removed from this file.
+
+This did not need YIELD_SPEED_MM_S to be bounded. A robot can still be measured
+at yield speed within JUNCTION_FOOTPRINT_MM of a node it just departed -- once
+its region step is entered, gating moves on to whatever step comes next, and it
+can shed to yield speed approaching *that* boundary before physically clearing
+the footprint. But that is not the exposure this constant bounds: a second robot
+cannot book the same region while a live peer still reports it as current_node
+(core/robot.py::_may_enter, the REGION "opaque peer" branch) -- a real-time,
+node-identity check independent of speed or elapsed reservation time. Verified
+directly (zero collisions across seeds at several yield speeds, including well
+above the shipped value) by
+tests/coordination/test_safety_cases.py::TestYieldSpeedDoesNotGovernRegionSafety.
 """
 
 YIELD_STANDOFF_MM = JUNCTION_CLEARANCE_MM + COLLISION_DISTANCE_MM

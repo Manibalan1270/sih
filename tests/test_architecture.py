@@ -210,6 +210,28 @@ class TestDashboardIsReadOnly:
             )
 
 
+class TestTheOrderGatewayNamesNoRobot:
+    """FR-4.1 / FR-4.6: no component assigns a task to a named AMR.
+
+    Order entry is the one operator affordance that reaches into a live run, so
+    it is also the obvious place for a dispatcher to appear by accident -- a
+    "send this one to AMR 3" convenience is a small patch away. Like FR-8.4's
+    read-only guarantee, this is kept structural: the gateway holds no reference
+    through which a robot could be addressed at all, rather than holding one and
+    declining to use it.
+    """
+
+    def test_the_gateway_cannot_address_a_robot(self) -> None:
+        for relative in ("gateway/orders.py", "gateway/api.py"):
+            source = require_module(relative).read_text(encoding="utf-8")
+            for forbidden in (".robot_id", ".accept_task", "engine.robots", ".queue"):
+                assert forbidden not in source, (
+                    f"{relative} references {forbidden!r}. The gateway announces "
+                    f"that work exists and stops there; choosing who does it is "
+                    f"the fleet's (FR-4.1, FR-4.6)."
+                )
+
+
 class TestScenarioIntegrity:
     def test_every_scenario_validates(self) -> None:
         for name in scenarios.SCENARIOS:

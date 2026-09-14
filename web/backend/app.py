@@ -5,10 +5,15 @@
 
 Runs a headless scenario in a background thread, paced to the wall clock, and
 streams ``telemetry.snapshot`` frames to every connected browser. Run Control
-starts a run (scenario, seed, speed) and can pause or resume it; that is the whole
-of what an operator can do. There is no path from here to a robot: this module
-constructs simulations and reads them, and never holds a transport (FR-8.4,
-IF-1.6, BR-7 -- enforced by tests/test_architecture.py).
+starts a run (scenario, seed, speed) and can pause or resume it. This process
+also hosts the order gateway's page and router (``gateway/``), which is how work
+is posted -- but that is the gateway's surface, not the dashboard's.
+
+There is no path from here to a robot: this module constructs simulations and
+reads them, and never holds a transport (FR-8.4, IF-1.6, BR-7 -- enforced by
+tests/test_architecture.py). Posting an order is not an exception to that. An
+order says a journey needs doing and goes onto the mesh as an ANNOUNCE; which
+AMR takes it is the fleet's decision and nothing here can influence it (FR-4.1).
 
 The fleet does not need this process. Kill it mid-run and the robots are unaffected,
 because the simulation's robots talk to each other over the in-process mesh and
@@ -33,6 +38,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from core import config, scenarios
+from gateway.api import build_router as build_order_router
 from simulator import scenario as scenario_module
 from web.backend import telemetry
 
@@ -273,10 +279,29 @@ async def _lifespan(_: FastAPI):
 app = FastAPI(title="ROBOTON Fleet Dashboard", version="1.0", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
+# Order entry is the gateway's, not the dashboard's: this process hosts the page,
+# but the logic that accepts work lives in gateway/ and holds no transport either
+# (FR-4.1, IF-3.2). Mounting it here does not weaken FR-8.4 -- posting an order
+# announces that work exists; it never names the robot that will do it.
+app.include_router(build_order_router(controller), prefix="/api/orders", tags=["orders"])
+
 
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+@app.get("/orders")
+def orders_page() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "orders.html")
+
+
+@app.get("/simulation")
+def simulation_page() -> FileResponse:
+    """The floor itself. Split from the overview because watching and reading are
+    different jobs: the overview answers "is the fleet healthy", this answers
+    "what is it doing right now"."""
+    return FileResponse(FRONTEND_DIR / "simulation.html")
 
 
 @app.get("/api/scenarios")

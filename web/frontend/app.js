@@ -187,7 +187,7 @@
 
     const cells = entry.row.children;
     cells[0].textContent = r.id;
-    cells[1].innerHTML = `<span class="state-pill ${r.state}">${r.state}</span>`;
+    cells[1].innerHTML = `<span class="pill ${r.state}">${r.state}</span>`;
     cells[2].innerHTML = `<span class="bat"><span class="bat-track"><span class="bat-fill${low ? " low" : ""}" style="width:${r.battery}%"></span></span>${r.battery}%</span>`;
     cells[3].textContent = r.task === null ? "—" : `#${r.task}${r.leg === "TO_DROP" ? "▸drop" : "▸pick"}${r.queue > 1 ? "+" : ""}`;
     cells[4].textContent = r.wait ? (r.wait.blocker >= 0 ? `AMR ${r.wait.blocker}` : r.wait.kind) : "";
@@ -257,15 +257,15 @@
     const note = $("run-note");
     if (f.error) {
       note.textContent = `Run stopped: ${f.error}`;
-      note.className = "run-note error";
+      note.className = "note error";
     } else if (f.finished) {
       note.textContent = c.tasks_completed === c.tasks_total
         ? `Every task completed. ${c.collisions === 0 ? "No collisions." : c.collisions + " collision(s)."}`
         : `Time limit reached with ${c.tasks_total - c.tasks_completed} task(s) unfinished.`;
-      note.className = "run-note";
+      note.className = "note";
     } else {
       note.textContent = f.paused ? "Paused." : "";
-      note.className = "run-note";
+      note.className = "note";
     }
 
     running = !f.finished && !f.error;
@@ -309,11 +309,13 @@
     };
     const robots = Number($("robots").value);
     if (robots > 0) body.robots = robots;
+    const tasks = Number($("tasks").value);
+    if (tasks > 0) body.tasks = tasks;
     const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) {
       const detail = (await res.json()).detail;
       $("run-note").textContent = `Could not start: ${detail}`;
-      $("run-note").className = "run-note error";
+      $("run-note").className = "note error";
     }
   });
 
@@ -329,7 +331,7 @@
   window.addEventListener("error", (event) => {
     const note = $("run-note");
     note.textContent = `Dashboard error: ${event.message}`;
-    note.className = "run-note error";
+    note.className = "note error";
   });
 
   loadScenarios();

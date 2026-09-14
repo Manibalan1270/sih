@@ -13,6 +13,7 @@ import math
 
 from core import config
 from core.graph import Graph
+from core.timewindows import ResourceModel
 
 
 def separation(d1: int, d2: int, *, offset: int = config.AISLE_LANE_OFFSET_MM) -> float:
@@ -73,22 +74,44 @@ class TestTheCornerConvergence:
                 assert both_departing >= offset
 
 
-class TestTheWindowDoesNotCoverTheFootprint:
-    """Why the claim expires before the robot is clear -- the unfixed half."""
+class TestRegionCrossingIsSizedByGeometryNotAConstant:
+    """core/timewindows.py::ResourceModel.region_cross_ms replaced the old fixed
+    JUNCTION_OCCUPANCY_MS reservation (Appendix E, 700 ms, defect 10) that a
+    yielding robot could outlive. The old constant was never wired into the
+    Phase-12 route-level planner and has been removed from config.py; this pins
+    the invariant its replacement actually enforces.
 
-    def test_occupancy_covers_less_than_the_footprint_at_nominal_speed(self) -> None:
-        reach_mm = config.JUNCTION_OCCUPANCY_MS * config.NOMINAL_SPEED_MM_S // 1000
-        assert reach_mm < config.JUNCTION_FOOTPRINT_MM
+    Raising YIELD_SPEED_MM_S needs no change here. It is not true that a robot
+    never moves at yield speed within JUNCTION_FOOTPRINT_MM -- once a region step
+    is entered, gating moves on to whatever comes next (a lane, typically), and a
+    robot can be shedding to yield speed on approach to *that* boundary while still
+    geometrically short of the footprint radius it just departed (measured: 4 mm
+    past the node, still slowing for a lane 1196 mm further on). What matters is
+    that this is not the exposure JUNCTION_FOOTPRINT_MM bounds: a second robot
+    cannot book that same region while a live peer still reports it as
+    current_node (core/robot.py::_may_enter, the REGION "opaque peer" branch),
+    independent of speed or elapsed reservation time. See
+    tests/coordination/test_safety_cases.py::TestYieldSpeedDoesNotGovernRegionSafety
+    for the direct, empirical check (zero collisions across seeds at several
+    yield speeds, including well above the shipped value).
+    """
 
-    def test_and_far_less_at_yield_speed(self) -> None:
-        """The case that actually bites: a yielding robot crawls the corner at a third
-        of nominal, so a window sized in milliseconds covers a third of the distance."""
-        reach_mm = config.JUNCTION_OCCUPANCY_MS * config.YIELD_SPEED_MM_S // 1000
-        assert reach_mm * 3 < config.JUNCTION_FOOTPRINT_MM
+    def test_region_cross_ms_exactly_covers_the_footprint_at_nominal_speed(self) -> None:
+        model = ResourceModel(Graph.load("maps/benchmark_map.json"))
+        reach_mm = model.region_cross_ms * config.NOMINAL_SPEED_MM_S // 1000
+        assert reach_mm == 2 * config.JUNCTION_FOOTPRINT_MM
+
+    def test_a_fixed_millisecond_constant_would_have_undersized_it(self) -> None:
+        """Why the fix is geometry, not a bigger constant: Appendix E's 700 ms
+        reserved only 560 mm of nominal-speed travel against the 2400 mm a full
+        crossing (boundary to boundary) actually needs."""
+        appendix_e_ms = 700
+        reach_mm = appendix_e_ms * config.NOMINAL_SPEED_MM_S // 1000
+        assert reach_mm < 2 * config.JUNCTION_FOOTPRINT_MM
 
     def test_a_yielding_robot_stops_outside_the_footprint(self) -> None:
-        """The one guarantee that does hold: whatever the window says, a robot that
-        yields comes to rest clear of the corner rather than inside it."""
+        """The one guarantee that must hold regardless of speed: whatever a robot
+        is waiting for, it comes to rest clear of the corner, not inside it."""
         assert config.YIELD_STANDOFF_MM > config.JUNCTION_FOOTPRINT_MM
 
 
@@ -101,10 +124,15 @@ class TestSingleLaneAislesHaveNoOffset:
 
 
 class TestTheCornerOutlastsAppendixE:
-    """Why the region is sized by geometry, not by JUNCTION_OCCUPANCY_MS: crossing a
-    corner takes longer than the constant Appendix E reserves for it."""
+    """Historical record: why the region had to be sized by geometry rather than
+    by Appendix E's fixed constant, which this file no longer imports because
+    core/config.py no longer defines it (dead since the Phase-12 rewrite to
+    route-level, time-window reservations)."""
 
-    def test_the_corner_takes_longer_to_cross_than_appendix_e_reserves(self) -> None:
-        """Which is the whole reason the offset is needed rather than the constant."""
+    def test_the_corner_takes_longer_to_cross_than_appendix_e_reserved(self) -> None:
+        """One crossing (one footprint, boundary to node) already outlasts the 700 ms
+        Appendix E specified -- before even considering the full two-footprint
+        transit ResourceModel.region_cross_ms now reserves."""
+        appendix_e_ms = 700
         corner_ms = config.JUNCTION_FOOTPRINT_MM * 1000 // config.NOMINAL_SPEED_MM_S
-        assert corner_ms > config.JUNCTION_OCCUPANCY_MS
+        assert corner_ms > appendix_e_ms

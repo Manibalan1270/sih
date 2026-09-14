@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROBOTON — live floor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="app">
+
+<nav class="rail">
+  <a class="rail-mark" href="/">
+    <span class="rail-mark-word">ROBOTON</span>
+    <span class="rail-mark-sub">No central planner. No dispatcher. The fleet decides.</span>
+  </a>
+  <ul class="rail-nav">
+    <li><a href="/">Fleet overview</a></li>
+    <li><a href="/orders">Announce task</a></li>
+    <li><a href="/simulation" class="current" aria-current="page">Live floor</a></li>
+  </ul>
+  <div class="rail-foot">
+    <span class="lamp" data-state="live"></span>
+    <span class="rail-foot-label">spectator</span>
+  </div>
+</nav>
+
+<main class="sheet flush">
+  <header class="sheet-head">
+    <div>
+      <h1 class="title">Live floor</h1>
+      <p class="subtitle" id="fleet-count">0 robots</p>
+    </div>
+    <span class="status">read-only view</span>
+  </header>
+
+  <div class="floor-layout">
+    <section class="floor" aria-label="Warehouse floor">
+      <svg id="map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="6" stroke="#ffb340" stroke-width="2"/>
+          </pattern>
+        </defs>
+        <g id="layer-zones"></g>
+        <g id="layer-lanes"></g>
+        <g id="layer-nodes"></g>
+        <g id="layer-routes"></g>
+        <g id="layer-waits"></g>
+        <g id="layer-robots"></g>
+      </svg>
+
+      <div class="floor-hud">
+        <span class="hud-chip">sim clock <strong id="clock">00:00.0</strong></span>
+        <span class="hud-chip">click an AMR to trace its route</span>
+      </div>
+
+      <div id="empty" class="empty">
+        <p class="empty-title">No run in progress</p>
+        <p>Start one from the <a href="/">fleet overview</a>, or use the controls beside this
+          floor. The fleet appears the moment the first AMR moves.</p>
+      </div>
+
+      <div class="legend">
+        <span><i class="sw sw-moving"></i>moving</span>
+        <span><i class="sw sw-yield"></i>yielding</span>
+        <span><i class="sw sw-idle"></i>idle</span>
+        <span><i class="sw sw-charging"></i>charging</span>
+        <span><i class="sw sw-fault"></i>fault</span>
+        <span><i class="sw sw-pickup"></i>pickup</span>
+        <span><i class="sw sw-drop"></i>drop</span>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="side-block">
+        <p class="card-label">Delivered</p>
+        <p class="hero-figure"><span class="now" id="c-done">0</span><span class="of">/<span id="c-total">0</span></span></p>
+        <div class="meter"><span id="c-progress"></span></div>
+        <p class="note" id="run-note"></p>
+      </div>
+
+      <div class="side-block tight">
+        <div class="side-list">
+          <div><div class="stat-value" id="c-coll">0</div><div class="stat-label">Collisions</div></div>
+          <div><div class="stat-value" id="c-yields">0</div><div class="stat-label">Yields</div></div>
+          <div><div class="stat-value" id="c-pending">0</div><div class="stat-label">Pending</div></div>
+          <div><div class="stat-value" id="c-frames">0</div><div class="stat-label">Mesh frames</div></div>
+          <div><div class="stat-value" id="c-stopped">0 s</div><div class="stat-label">Stopped</div></div>
+          <div><div class="stat-value" id="c-makespan">—</div><div class="stat-label">Makespan</div></div>
+        </div>
+      </div>
+
+      <div class="side-block">
+        <form id="run-form" class="stack" autocomplete="off">
+          <p class="card-label" style="margin:0">Run control</p>
+          <label class="field">
+            <span>Scenario</span>
+            <select id="scenario" name="scenario"></select>
+          </label>
+          <div class="form-row">
+            <label class="field">
+              <span>Seed</span>
+              <input id="seed" name="seed" type="number" min="0" value="1">
+            </label>
+            <label class="field">
+              <span>AMRs</span>
+              <input id="robots" name="robots" type="number" min="1" placeholder="default">
+            </label>
+            <label class="field">
+              <span>Tasks</span>
+              <input id="tasks" name="tasks" type="number" min="1" placeholder="default">
+            </label>
+          </div>
+          <div class="form-row">
+            <label class="field">
+              <span>Speed</span>
+              <select id="speed" name="speed">
+                <option value="1">1×</option>
+                <option value="2" selected>2×</option>
+                <option value="4">4×</option>
+                <option value="8">8×</option>
+                <option value="16">16×</option>
+              </select>
+            </label>
+            <button type="submit" id="start" class="btn primary">Start run</button>
+            <button type="button" id="pause" class="btn" disabled>Pause</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="side-scroll">
+        <table id="fleet-table">
+          <thead>
+            <tr><th style="width:40px">AMR</th><th style="width:80px">State</th><th style="width:88px">Battery</th><th>Task</th><th style="width:84px">Holding</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
