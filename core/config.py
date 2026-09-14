@@ -408,6 +408,14 @@ turned one collision into two stalls. The sensor radius answers "is the node ahe
 occupied"; this answers "where do I stop". They are bounded relative to each other,
 not equal."""
 
+STATION_HOLD_MS = 3000
+"""How long a plan books a station for on arrival: drive in, turn around, and be ready
+to leave. Pickup and drop are instantaneous in the model (Task.reach_pickup), so this is
+the berth's turnaround, not a service time. The robot's *next* plan replaces it -- a
+plan is booked whole and a new plan_seq cancels the old -- so it only has to be long
+enough that no peer plans into the berth before the robot has actually decided where it
+is going next."""
+
 ARBITRATION_LOOKAHEAD_MS = 4000
 """How far ahead of a junction a robot begins arbitrating.
 

@@ -122,6 +122,48 @@ class TestArbitrationPurity:
             f"FR-3.8 require integer or fixed-point arithmetic on this path"
         )
 
+    SAFETY_PATH = (
+        "core/arbitration.py",
+        "core/reservation.py",
+        "core/timewindows.py",
+        "core/planner_timewindow.py",
+    )
+    """Every module a route booking or an entry decision passes through. The
+    time-window planner and the resource table are now the safety path -- a plan is
+    what keeps robots apart -- so they inherit every rule arbitration had."""
+
+    @pytest.mark.parametrize("module", SAFETY_PATH)
+    def test_safety_path_imports_no_learned_or_random_module(self, module: str) -> None:
+        path = require_module(module)
+        offending = imported_modules(path) & self.FORBIDDEN_MODULES
+        assert not offending, (
+            f"{module} imports {sorted(offending)}; it is on the safety path and must "
+            f"stay free of learned state and randomness (FR-2.9, FR-5.9, CON-7)"
+        )
+
+    @pytest.mark.parametrize("module", SAFETY_PATH)
+    def test_safety_path_uses_no_floating_point_literals(self, module: str) -> None:
+        path = require_module(module)
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        floats = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, float)
+        ]
+        assert not floats, (
+            f"{module} contains float literals {floats}; CON-6 and FR-3.8 require "
+            f"integer or fixed-point arithmetic on this path"
+        )
+
+    @pytest.mark.parametrize("module", SAFETY_PATH)
+    def test_safety_path_never_consults_the_traffic_model(self, module: str) -> None:
+        path = require_module(module)
+        leaked = referenced_names(path) & {"ewma", "pheromone", "traffic", "learned"}
+        assert not leaked, (
+            f"{module} references {sorted(leaked)}, which suggests learned traffic "
+            f"state has reached the safety path (FR-2.9)"
+        )
+
     def test_traffic_model_is_never_consulted_by_arbitration(self) -> None:
         path = require_module("core/arbitration.py")
         names = referenced_names(path)
