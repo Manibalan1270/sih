@@ -198,9 +198,14 @@ All found while implementing; all should be corrected in v1.1.
     AAMAS 2017, "well-formed" MAPD) requires that between any two endpoints a route exists
     crossing no third endpoint. `Graph.is_well_formed()` measures it: 19 of 28 endpoint
     pairs fail on benchmark_map, 996 of 1,128 on warehouse_zoned_30, 17,738 of 18,336 on
-    warehouse_zoned_100. Pinned as a strict xfail in `tests/unit/test_maps.py` so it must
-    flip when the maps are fixed. **Open**; the fix is Kiva-style maps in which every
-    endpoint is a degree-1 spur hanging off an aisle, as the parking bays already are.
+    warehouse_zoned_100. **Resolved** by making every station a degree-1 spur, as the
+    parking bays already were: the benchmark map's depots were, and four more hang off
+    its station junctions; the generated maps are Kiva-style, with pickup stations off
+    the left column (inbound dock), drop stations off the right (packing), and bays off
+    the rest of a perimeter ring whose edges are split at their midpoints so every leaf
+    has its own anchor -- a bay chained behind another would put one robot on another's
+    only way out. `Graph.is_well_formed` now reports no failing pair on any map, and it
+    is a plain test rather than an xfail. The SRS should state the condition.
 
 ## Status
 

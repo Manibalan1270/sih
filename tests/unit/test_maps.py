@@ -214,11 +214,29 @@ class TestZonedMapStructure:
 
     @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
     def test_grid_dimensions_match_the_node_count(self, name: str) -> None:
-        """The floor is the grid; bays hang off it and are counted separately."""
+        """The floor is the grid. Everything else is a perimeter midpoint or a leaf
+        hanging off the ring: bays, pickup stations, drop stations."""
         raw = _raw(name)
         grid = raw["grid"]
+        cols, rows = grid["cols"], grid["rows"]
         bays = [n for n in raw["nodes"] if n.get("parking")]
-        assert len(raw["nodes"]) == grid["cols"] * grid["rows"] + len(bays)
+        stations = set(raw["pickup_nodes"]) | set(raw["drop_nodes"])
+        # One midpoint per perimeter edge: two rows of cols-1, two columns of rows-1.
+        mids = 2 * (cols - 1) + 2 * (rows - 1)
+        assert len(raw["nodes"]) == cols * rows + mids + len(bays) + len(stations)
+
+    @pytest.mark.parametrize("name", ["warehouse_zoned_30", "warehouse_zoned_100"])
+    def test_every_station_and_bay_is_its_own_leaf(self, name: str) -> None:
+        """Independent leaves, not chains. A bay reached only through another bay puts
+        one robot on another's sole way out, which is the parking half of
+        well-formedness violated; a station reached through a station is the same for
+        tasks. Degree 1 means nothing can be behind it."""
+        graph = Graph.load(MAPS_DIR / f"{name}.json")
+        leaves = set(graph.parking_nodes) | graph.task_endpoints
+        for node in leaves:
+            assert len(graph.neighbours(node)) == 1, f"{name}: node {node} is not a leaf"
+        anchors = [graph.neighbours(node)[0][0] for node in leaves]
+        assert len(anchors) == len(set(anchors)), f"{name}: two leaves share an anchor"
 
     def test_scale_map_needs_16_bit_ids(self) -> None:
         """This is what forces scale100's edge_id_bits override."""
@@ -363,25 +381,7 @@ class TestWellFormedness:
     reason a robot at a pickup is parked in an intersection.
     """
 
-    @pytest.mark.parametrize(
-        "map_name",
-        [
-            pytest.param(
-                name,
-                marks=pytest.mark.xfail(
-                    strict=True,
-                    reason=(
-                        "SRS defect 13: task endpoints sit on junctions, so most endpoint "
-                        "pairs have no route avoiding a third endpoint. Fixed by the "
-                        "Kiva-style maps that make every endpoint a degree-1 spur."
-                    ),
-                ),
-            )
-            if name in ("warehouse_zoned_30", "warehouse_zoned_100")
-            else name
-            for name in ALL_MAP_NAMES
-        ],
-    )
+    @pytest.mark.parametrize("map_name", ALL_MAP_NAMES)
     def test_every_endpoint_pair_has_a_route_avoiding_other_endpoints(
         self, map_name: str
     ) -> None:

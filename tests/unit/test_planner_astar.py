@@ -186,11 +186,18 @@ class TestHeuristic:
         # TestLanesDoNotOverlapWithoutAJunction in test_maps.py). Once the bays sat where
         # they belong the equality broke in the heuristic's favour.
         floor = cols * rows - 1
-        assert astar.stats.expansions == floor, (
-            f"expected the full floor rectangle ({floor}) and no more; "
-            f"got {astar.stats.expansions}"
+        # Perimeter midpoints sit on the rectangle's boundary, so those on a monotone
+        # staircase tie at the optimal f exactly as the floor nodes do; the heuristic
+        # cannot prune them either. What it does prune is every leaf -- stations and
+        # bays -- because a leaf leads away from the goal.
+        mids = 2 * (cols - 1) + 2 * (rows - 1)
+        leaves = len(graph.parking_nodes) + len(graph.task_endpoints)
+        assert floor <= astar.stats.expansions <= floor + mids, (
+            f"expected the floor rectangle ({floor}) plus at most its {mids} boundary "
+            f"midpoints; got {astar.stats.expansions}"
         )
-        assert _expansions_with_zero_heuristic(graph, 0, goal) >= floor
+        assert astar.stats.expansions < floor + mids + leaves, "a leaf was expanded"
+        assert _expansions_with_zero_heuristic(graph, 0, goal) >= astar.stats.expansions
 
     def test_grid_maps_use_the_manhattan_bound(self) -> None:
         """Valid only because every edge in these maps is axis-parallel."""

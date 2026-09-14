@@ -109,95 +109,119 @@ def build_grid(
             entry["single_lane"] = True
         edges.append(entry)
 
+    # Perimeter edges are split at their midpoint. Every station and every bay must be
+    # its own degree-1 leaf off its own anchor -- a bay chained behind another puts one
+    # robot on another's only way out, which is the parking half of well-formedness
+    # violated -- and the bare perimeter has too few nodes: 32 on this grid for 30 bays
+    # and 12 stations, 68 on the 24x12 grid for 100 and 24. A midpoint on each perimeter
+    # edge roughly doubles the ring. Spurs from neighbouring anchors are then 2000 mm
+    # (top and bottom) or 2500 mm (sides) apart, clear of the lane-overlap floor.
+    mid_of: dict[tuple[int, int], int] = {}
+
+    def add_mid(a: int, b: int) -> int:
+        na, nb = nodes[a], nodes[b]
+        mid = {
+            "id": len(nodes),
+            "name": f"M{a:03d}_{b:03d}",
+            "x": (na["x"] + nb["x"]) // 2,
+            "y": (na["y"] + nb["y"]) // 2,
+            "marker": True,
+            "junction": False,  # degree 2 until a bay hangs off it
+            "zone": na["zone"],
+        }
+        nodes.append(mid)
+        mid_of[(a, b)] = mid["id"]
+        return mid["id"]
+
+    def add_aisle(u: int, v: int, *, split: bool, single_lane: bool = False) -> None:
+        if split:
+            m = add_mid(u, v)
+            add_edge(u, m, single_lane=single_lane)
+            add_edge(m, v, single_lane=single_lane)
+        else:
+            add_edge(u, v, single_lane=single_lane)
+
     for row in range(rows):  # cross-aisles
         for col in range(cols - 1):
-            add_edge(node_id(col, row), node_id(col + 1, row))
+            add_aisle(
+                node_id(col, row), node_id(col + 1, row),
+                split=row in (0, rows - 1),
+            )
     for col in range(cols):  # pick-aisles
         for row in range(rows - 1):
-            add_edge(
-                node_id(col, row),
-                node_id(col, row + 1),
+            add_aisle(
+                node_id(col, row), node_id(col, row + 1),
+                split=col in (0, cols - 1),
                 single_lane=col in single_lane_cols,
             )
 
-    # Pickups on the left half, drops on the right half, so generated tasks
-    # traverse the floor and actually overlap rather than staying local.
-    pickups = [n["id"] for n in nodes if n["id"] % cols < cols // 3]
-    drops = [n["id"] for n in nodes if n["id"] % cols >= cols - cols // 3]
-
-    # ---- staging bays --------------------------------------------------------
-    # One per robot, and none of them a task endpoint.
+    # ---- stations and bays: leaves off the perimeter ring ----------------------
     #
-    # An idle AMR standing on a junction is a permanent obstacle: peers stop at their
-    # following distance and wait for a robot with no reason to move. So idle robots
-    # withdraw to a bay -- but that only helps if there are enough bays and none of
-    # them is somewhere a task sends a robot. With too few, the queue for a bay blocks
-    # the aisle instead; with a bay on a pickup node, the jam simply relocates. Both
-    # were observed before this existed.
+    # A Kiva-style floor. The grid is the aisle network; nothing a robot must *stop*
+    # for is on it. Pickup stations hang off the left column (the inbound dock), drop
+    # stations off the right (packing), each a degree-1 spur pointing away from the
+    # floor. That is the well-formedness condition of Ma, Li, Kumar and Koenig (AAMAS
+    # 2017): between any two endpoints there is a route crossing no third, because a
+    # leaf cannot be crossed. Before this every station was a 3- or 4-way junction and
+    # a robot at a pickup was parked in an intersection -- SRS defect 13.
     #
-    # Bays hang off perimeter nodes and sit outside the floor, which is where a real
-    # warehouse puts its charging hall.
-    perimeter = [
-        node_id(col, row)
-        for row in range(rows)
-        for col in range(cols)
-        if col in (0, cols - 1) or row in (0, rows - 1)
-    ]
-    # Every perimeter node is an anchor, not only those clear of task endpoints.
-    #
-    # Excluding endpoint columns left 8 anchors for 30 bays on this grid and 16 for 100
-    # on the larger one, so bays had to stack several deep off each anchor -- and it is
-    # the *bay* that must not be a task endpoint, which it never is, being a new node.
-    # An anchor next to a busy node costs a little throughput; too few anchors cost
-    # correctness.
-    anchors = perimeter
-    x_min = min(n["x"] for n in nodes)
-    x_max = max(n["x"] for n in nodes)
-    y_min = min(n["y"] for n in nodes)
-    y_max = max(n["y"] for n in nodes)
-    # bay id at (anchor, depth), so a deeper bay can hang off the one before it
-    ray: dict[tuple[int, int], int] = {}
-    for index in range(bays):
-        anchor = anchors[index % len(anchors)]
-        anchor_node = nodes[anchor]
-        depth = 1 + index // len(anchors)
+    # Bays take the rest of the ring: top and bottom rows and the side midpoints. One
+    # per robot, each its own leaf, chargers here, never a task endpoint (defect 6).
+    x_max, y_max = (cols - 1) * COL_SPACING_MM, (rows - 1) * ROW_SPACING_MM
 
-        # Outward means away from the floor, perpendicular to the edge the anchor sits
-        # on. Deciding it from ``x == 0`` alone sent every bay on the top and bottom
-        # rows travelling *along* the aisle instead of off it, landing them on the
-        # neighbouring aisle nodes: 15 coordinates on warehouse_zoned_30 were shared by
-        # two or more nodes, and bay edges lay on top of cross-aisle edges. Robots then
-        # collided on lanes that shared no node, which no junction arbitration can
-        # prevent because there is no junction there to arbitrate.
-        if anchor_node["x"] == x_min:
-            step = (-(COL_SPACING_MM // 2), 0)
-        elif anchor_node["x"] == x_max:
-            step = (COL_SPACING_MM // 2, 0)
-        elif anchor_node["y"] == y_min:
-            step = (0, -(ROW_SPACING_MM // 2))
-        else:
-            step = (0, ROW_SPACING_MM // 2)
+    def outward(node: dict) -> tuple[int, int]:
+        if node["x"] == 0:
+            return (-(COL_SPACING_MM // 2), 0)
+        if node["x"] == x_max:
+            return (COL_SPACING_MM // 2, 0)
+        if node["y"] == 0:
+            return (0, -(ROW_SPACING_MM // 2))
+        return (0, ROW_SPACING_MM // 2)
 
-        bay_id = len(nodes)
-        nodes.append(
-            {
-                "id": bay_id,
-                "name": f"BAY{index:03d}",
-                "x": anchor_node["x"] + step[0] * depth,
-                "y": anchor_node["y"] + step[1] * depth,
-                "junction": False,
-                "marker": True,
-                "parking": True,
-                "charger": True,
-                "zone": anchor_node["zone"],
-            }
+    def add_spur(anchor: int, name: str, **flags) -> int:
+        a = nodes[anchor]
+        dx, dy = outward(a)
+        spur = {
+            "id": len(nodes),
+            "name": name,
+            "x": a["x"] + dx,
+            "y": a["y"] + dy,
+            "junction": False,
+            "marker": True,
+            "zone": a["zone"],
+            **flags,
+        }
+        nodes.append(spur)
+        a["junction"] = True  # something now turns off here
+        add_edge(anchor, spur["id"])
+        return spur["id"]
+
+    pickups = [add_spur(node_id(0, row), f"PICK{row:02d}") for row in range(rows)]
+    drops = [add_spur(node_id(cols - 1, row), f"DROP{row:02d}") for row in range(rows)]
+
+    # Bay anchors, walked round the ring so the chosen subset is spread out rather
+    # than clustered at one corner: bottom row left to right, right side upward, top
+    # row right to left, left side downward. Corners belong to the stations.
+    ring: list[int] = []
+    for col in range(cols - 1):
+        if col > 0:
+            ring.append(node_id(col, 0))
+        ring.append(mid_of[(node_id(col, 0), node_id(col + 1, 0))])
+    for row in range(rows - 1):
+        ring.append(mid_of[(node_id(cols - 1, row), node_id(cols - 1, row + 1))])
+    for col in range(cols - 1, 0, -1):
+        if col < cols - 1:
+            ring.append(node_id(col, rows - 1))
+        ring.append(mid_of[(node_id(col - 1, rows - 1), node_id(col, rows - 1))])
+    for row in range(rows - 1, 0, -1):
+        ring.append(mid_of[(node_id(0, row - 1), node_id(0, row))])
+    if bays > len(ring):
+        raise ValueError(
+            f"{name}: {bays} bays requested but the ring has only {len(ring)} anchors"
         )
-        # A second bay on the same ray hangs off the first, not off the anchor. An edge
-        # straight from the anchor to depth 2 would pass through depth 1, which is the
-        # same overlapping-lane defect in miniature. Chained, the ray is a dead-end
-        # charging lane, which is what it physically is.
-        ray[(anchor, depth)] = bay_id
-        add_edge(ray.get((anchor, depth - 1), anchor), bay_id)
+    for index in range(bays):
+        anchor = ring[index * len(ring) // bays]
+        add_spur(anchor, f"BAY{index:03d}", parking=True, charger=True)
 
     return {
         "name": name,
