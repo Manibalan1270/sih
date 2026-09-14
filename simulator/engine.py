@@ -267,7 +267,6 @@ class Engine:
         for robot in self.active_robots:
             robot.forward_clearance_mm = 1 << 30
             robot.forward_blocker_id = -1
-            robot.forward_blocker_stopped = False
             if robot.edge_id is None or robot.next_node is None:
                 continue
             nearest = 1 << 30
@@ -285,10 +284,8 @@ class Engine:
                     if robot.robot_id < other.robot_id:
                         continue
                     nearest, blocker = 0, other.robot_id
-                    blocker_stopped = other._last_speed_mm_s == 0
                 elif 0 < gap < nearest:
                     nearest, blocker = gap, other.robot_id
-                    blocker_stopped = other._last_speed_mm_s == 0
 
             to_node = robot.graph.length_mm(robot.edge_id) - robot.progress_mm
             for other, departing in at_node.get(robot.next_node, ()):
@@ -317,12 +314,9 @@ class Engine:
                     continue
                 if to_node < nearest:
                     nearest, blocker = to_node, other.robot_id
-                    blocker_stopped = other._last_speed_mm_s == 0
 
             robot.forward_clearance_mm = nearest
             robot.forward_blocker_id = blocker
-            robot.forward_blocker_stopped = blocker >= 0 and blocker_stopped
-
 
     def _apply_motion(self, robot: Robot, result) -> None:
         command = result.command

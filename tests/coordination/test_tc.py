@@ -23,7 +23,7 @@ import pytest
 from core import config, scenarios
 from core.auction import Auctioneer
 from core.task import Task, TaskQueue
-from simulator.scenario import AuctionAllocator, build
+from simulator.scenario import build
 
 
 def small_task(task_id: int = 1, *, pickup: int = 1, drop: int = 5,
@@ -166,32 +166,6 @@ class TestTC10NobodyCanBid:
 
         assert aging_credit(waiting, 120_000) > aging_credit(waiting, 10_000)
         del auctioneer
-
-
-@pytest.mark.tc
-class TestTC4GatewayPause:
-    """AC-4: pausing order intake does not interrupt held work."""
-
-    def test_held_tasks_complete_after_gateway_stops(self) -> None:
-        allocator = AuctionAllocator()
-        sim = build(
-            scenarios.get("bench3"),
-            seed=2,
-            allocator=allocator,
-            task_count=3,
-            waves=1,
-        )
-        for _ in range(100):
-            sim.step()
-
-        assert not sim.pending
-        assert sum(len(robot.queue) for robot in sim.engine.robots) == len(sim.task_set)
-        allocator.stop()
-
-        assert sim.run(max_ms=1_800_000)
-        assert {task.task_id for task in sim.completed} == {
-            task.task_id for task in sim.task_set
-        }
 
 
 @pytest.mark.tc

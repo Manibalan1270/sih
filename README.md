@@ -234,7 +234,7 @@ All found while implementing; all should be corrected in v1.1.
 
 ## Status
 
-Last updated 2026-09-15 (Step 6 safety and benchmark evidence updated; AC-3 remains open).
+Last updated 2026-09-14 (end of the route-level reservation work, plan Steps 0-4).
 
 ### Done and measured on this commit
 
@@ -248,42 +248,25 @@ Last updated 2026-09-15 (Step 6 safety and benchmark evidence updated; AC-3 rema
 | Full suite | **602 passed, 3 skipped** (hardware-only TCs), `py -m pytest -q` |
 
 Acceptance criteria as they stand: **AC-1** largely met (70 traced TCs); **AC-2** zero collisions
-across the 30-seed `bench3` gate; **AC-4** gateway-pause behavior verified; **AC-5** met;
-**AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open**:
-B is faster than A at `0.938x`, but the requirement is `<=0.8x`.
+at 3, 6 and 30 AMRs on the maps above; **AC-5** met; **AC-6** dashboard and Webots exist and
+render live position and battery. **AC-3 and AC-4 are not yet demonstrated** (below).
 
 ### Left to do, in order
 
-1. **Step 5 -- Configuration A is complete.** The `arbiter is None` branch of
-   `Robot._drive_tick` implements FR-10.5 stop-and-wait: the baseline halts within
-   `STOP_WAIT_RADIUS_MM`, resumes only beyond the hysteresis distance, and uses the lower
-   `robot_id` only after both robots are stopped. No mesh or INTENT is used. Focused baseline
-   tests pass, including the moving-blocker regression and the no-yield fleet test. This was
-   necessary because an unconditional lower-ID pass would make Configuration A artificially
-   fast and would invalidate the A/B comparison.
-2. **Step 6 -- evidence.** `benchmark/runner.py` now runs bench3 with identical seeded task
-   sets for Configuration A and B and reports mean/sd makespan, collisions, coordination
-   failures, deadlock cycles, stopped/precedence-hold time, and PATH frame counts. Ten seeds
-   currently prove B's safety result (`0` collisions, `0` coordination failures, `0` deadlock
-   cycles), while A records `24` collisions and `23` coordination failures. The auction window
-   is tuned to `200 ms` (from `300 ms`), and the reservation approach policy is tuned to
-   `700 mm/s` over a `3,500 mm` approach zone: ten-seed B mean makespan is now `301,438 ms`,
-   with `0` collisions, `0` coordination failures, and `0` deadlock cycles. AC-2 is now covered
-   by `tests/coordination/test_safety_cases.py::test_ac2_zero_collisions_across_thirty_bench3_seeds`.
-   AC-4 is now covered
-   by `tests/coordination/test_tc.py::TestTC4GatewayPause`: stopping the gateway after tasks
-   are held still completes every held task. AC-3 is still open:
-   mean makespan is `301,438 ms` for B versus `321,252 ms` for A (`0.938x`, still not the
-   required `<=0.8x`). The formal AC-3 test remains intentionally failing. Further safe sweeps
-   of reservation margin, settle delay, and auction timing did not close the remaining gap;
-   the current policy is the best measured collision-free result. The remaining work is
-   either deeper planner/allocation optimization or a review of the AC-3 target and benchmark
-   fairness before claiming completion. The 30-seed AC-2 and
-   >=10-seed AC-3 acceptance test now exists as
-   `test_ac3_b_reduces_mean_makespan_by_twenty_percent`, but correctly fails at the current
-   `0.938x` ratio. Replan-slack, settle-delay, reservation-margin, and idle-bid sweeps did not
-   reach the target; the slack experiment caused one B collision and was rejected. Safety
-   remains the controlling constraint.
+1. **Step 5 -- Configuration A as FR-10.5 defines it.** In the `arbiter is None` branch of
+   `Robot._drive_tick` (`_uncoordinated_speed` is the stub): halt when any peer footprint is
+   within `STOP_WAIT_RADIUS_MM` (1800, already in `core/config.py`), resume beyond
+   `STOP_WAIT_RADIUS_MM + STOP_WAIT_RESUME_HYSTERESIS_MM`, lower `robot_id` proceeds when both
+   halt. No mesh, no INTENT. `tests/unit/test_scenario.py::test_an_uncoordinated_fleet_never_yields`
+   must still hold. Without this, A has no halting penalty and AC-3 cannot be measured honestly.
+2. **Step 6 -- evidence.** `benchmark/runner.py` (does not exist yet; `scripts/run_scenario.py`
+   already points at it): bench3, seeds 0..N, identical task sets, A vs B, mean and sd of
+   makespan, collisions, deadlock cycles, hold-time breakdown (`RobotMetrics.precedence_hold_ms`,
+   `stopped_ms`), auction and PATH frames per task (`RobotMetrics.paths_sent`, mesh stats).
+   Then in `tests/coordination/test_tc.py`: **AC-2** (zero `coordination_failures`, no
+   `StallReport.is_deadlocked`, 30 seeds), **AC-3** (`mean(makespan_B) <= 0.8 * mean(makespan_A)`,
+   >= 10 seeds), **AC-4** (stop the `OrderGateway` allocator once tasks are held; every held task
+   still completes). Paste the runner output here.
 3. **A duplicate completion.** One `visual30` seed-0 run reported 121/120 tasks: a task
    completed twice (FR-4.8 duplicate holding after a lost frame). No collision, but
    `Simulation.is_finished` counts distinct ids so it hides in the report; find and fix.

@@ -12,7 +12,7 @@ import pytest
 
 from core import config
 from core.graph import Graph
-from core.robot import MotionCommand, Robot, StepResult
+from core.robot import MotionCommand, Robot
 from core.state_machine import State
 from core.task import Leg, Task, TaskQueue, TaskState
 from simulator.engine import Engine
@@ -549,51 +549,6 @@ class TestAnticipatoryFollowing:
         a follower stays outside the window its leader would claim at the next junction
         and the two never contend for it."""
         assert config.FOLLOW_GAP_MS > config.MARGIN_MS
-
-
-class TestUncoordinatedBaseline:
-    """Configuration A: no mesh, no arbiter, stop-and-wait by sensor radius."""
-
-    def test_stop_wait_halts_inside_radius_and_resumes_after_hysteresis(
-        self, benchmark_map: Graph
-    ) -> None:
-        robot = make_robot(benchmark_map, robot_id=2, home=0)
-        robot.forward_clearance_mm = config.STOP_WAIT_RADIUS_MM
-        robot.forward_blocker_id = 1
-        assert robot._uncoordinated_speed(0, StepResult(MotionCommand.hold())) == 0
-
-        robot.forward_clearance_mm = (
-            config.STOP_WAIT_RADIUS_MM + config.STOP_WAIT_RESUME_HYSTERESIS_MM + 1
-        )
-        assert (
-            robot._uncoordinated_speed(0, StepResult(MotionCommand.hold()))
-            == config.NOMINAL_SPEED_MM_S
-        )
-
-    def test_lower_robot_id_proceeds_when_both_are_halted(self, benchmark_map: Graph) -> None:
-        low = make_robot(benchmark_map, robot_id=1, home=0)
-        high = make_robot(benchmark_map, robot_id=2, home=0)
-
-        low.forward_clearance_mm = config.STOP_WAIT_RADIUS_MM
-        low.forward_blocker_id = 2
-        low.forward_blocker_stopped = True
-        high.forward_clearance_mm = config.STOP_WAIT_RADIUS_MM
-        high.forward_blocker_id = 1
-        high.forward_blocker_stopped = True
-
-        low._last_speed_mm_s = 0
-        high._last_speed_mm_s = 0
-
-        assert low._uncoordinated_speed(0, StepResult(MotionCommand.hold())) == config.NOMINAL_SPEED_MM_S
-        assert high._uncoordinated_speed(0, StepResult(MotionCommand.hold())) == 0
-
-    def test_lower_robot_id_still_waits_for_a_moving_blocker(self, benchmark_map: Graph) -> None:
-        robot = make_robot(benchmark_map, robot_id=1, home=0)
-        robot.forward_clearance_mm = config.STOP_WAIT_RADIUS_MM
-        robot.forward_blocker_id = 2
-        robot.forward_blocker_stopped = False
-
-        assert robot._uncoordinated_speed(0, StepResult(MotionCommand.hold())) == 0
 
 
 class TestHonestETAs:

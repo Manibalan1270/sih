@@ -289,12 +289,6 @@ class Robot:
     A sensor gives a distance; the simulator also knows the identity, and the
     identity is what makes a stall diagnosable."""
 
-    forward_blocker_stopped: bool = False
-    """Whether the detected blocker was stopped when the sensor was sampled.
-
-    Configuration A's lower-ID exception is valid only when both robots have
-    already stopped; the distance sensor alone cannot establish that fact."""
-
     forward_clearance_mm: int = 1 << 30
     """Distance to the nearest obstacle directly ahead, from the forward sensor
     (IF-2.4). Written every tick by whatever is driving the robot -- the simulator
@@ -1880,40 +1874,7 @@ class Robot:
         result.command = MotionCommand(speed_mm_s=speed, target_node=self.next_node)
 
     def _uncoordinated_speed(self, now_ms: int, result: StepResult) -> int:
-        """Configuration A: no plan, no precedence. FR-10.5's stop-and-wait.
-
-        The baseline halts when a peer footprint is inside the stop radius, stays stopped
-        until the radius plus hysteresis is cleared, and only allows the lower
-        ``robot_id`` through in the mutual-stop case where both robots have already come
-        to rest at the same boundary.
-        """
-        if self.forward_blocker_id < 0:
-            if self.forward_clearance_mm > (
-                config.STOP_WAIT_RADIUS_MM + config.STOP_WAIT_RESUME_HYSTERESIS_MM
-            ):
-                return config.NOMINAL_SPEED_MM_S
-            return 0
-
-        if self.forward_clearance_mm <= config.STOP_WAIT_RADIUS_MM:
-            if (
-                self._last_speed_mm_s == 0
-                and self.forward_blocker_stopped
-                and self.robot_id < self.forward_blocker_id
-            ):
-                result.notes.append(
-                    f"baseline stop-and-wait: lower robot id r{self.robot_id} proceeds past r{self.forward_blocker_id}"
-                )
-                return config.NOMINAL_SPEED_MM_S
-            result.notes.append(
-                f"baseline stop-and-wait: halted for r{self.forward_blocker_id} within {self.forward_clearance_mm} mm"
-            )
-            return 0
-
-        if self.forward_clearance_mm <= (
-            config.STOP_WAIT_RADIUS_MM + config.STOP_WAIT_RESUME_HYSTERESIS_MM
-        ):
-            return 0
-
+        """Configuration A: no plan, no precedence. FR-10.5's stop-and-wait."""
         return config.NOMINAL_SPEED_MM_S
 
     def _go_to(self, goal: int, now_ms: int, result: StepResult) -> bool:
