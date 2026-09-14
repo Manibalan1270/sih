@@ -233,6 +233,38 @@ Measured on this commit, not projected:
 | 30 (`visual30`) | warehouse_zoned_30 | seed 0 **completes 120 of 120** with 1 collision; seed 1 reaches 83 with 2 and a cycle |
 | 100 (`scale100`) | warehouse_zoned_100 | not re-measured since the map fix |
 
+### Where local rules stop working, and what was tried past that point
+
+Four further changes were built after the state above, each grounded and each measured,
+and each fixed one seed while breaking another. They are recorded because the pattern is
+the result:
+
+- **Convoy priority inheritance** (Sha, Rajkumar & Lehoczky 1990): every robot in a
+  same-direction queue asserts the queue's highest priority, so a high-priority robot
+  stuck behind a low-priority head is not outranked on the head's behalf. Correctly
+  targets a measured inversion at J7. seed 0 unchanged; seed 1 rose from 83 to 98 tasks
+  and from 2 to 5 collisions.
+- **Opposite-lane departures are not corner occupants.** Geometrically exact -- two
+  robots on one bidirectional edge going opposite ways are 2 * offset apart, always.
+  Targets a measured six-robot cycle on e5. Deadlocked seed 0 at 66 tasks every time it
+  was tried, alone or with the others, by exposing a queue-ranking configuration at J7.
+- **Queue-head ranking at junctions**, matching what corridors already do. Fixed the J7
+  configuration and raised seed 0's collisions from 1 to 5.
+- **Approach half of the window at actual speed.** Targets the one signature behind all
+  five seed 1 collisions: a robot crawling behind a leader whose 1500 ms approach claim
+  covered 360 mm of a 1200 mm corner, so it entered the corner with its claim seconds in
+  the future and stopped 4 mm inside -- 500 mm of separation instead of 507. Deadlocked
+  seed 0 at 97.
+
+Each is a correct local statement. Together they show that at 30 AMRs the remaining
+failures are not one more missing rule about one junction; they are what one-junction-
+at-a-time reasoning cannot resolve. The deadlock-freedom argument in the lane-routing
+literature (US 11,709,502 B2) rests on two things this implementation does not yet have:
+a spare-capacity condition on every lane and cycle, and routes planned sequentially in
+priority order over the *whole path*, not negotiated one resource at a time. The second
+is the sequence-level reservation per [R8] that `_arbitrate_corridor` already names as
+the fix for ring deadlocks. That is the next piece of work, and it is not a patch.
+
 `visual30` began this work at 24 of 120 tasks with 12 collisions. Part of that was never
 coordination at all: the bay generator placed bays *on top of* aisle nodes -- fifteen
 coordinates on warehouse_zoned_30 held two or more nodes -- so robots collided on lanes
