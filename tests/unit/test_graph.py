@@ -191,7 +191,7 @@ class TestQueries:
         assert set(benchmark_map.parking_nodes) == {12, 13, 14}
         assert set(benchmark_map.chargers) == set(benchmark_map.parking_nodes)
         # Depots and parking bays are spurs, so they are not arbitration points.
-        spurs = {0, 7, 12, 13, 14}
+        spurs = {0, 7, 12, 13, 14, 15, 16, 17, 18}  # depots, bays, and the station spurs
         assert set(benchmark_map.junctions) == set(benchmark_map.nodes) - spurs
 
     def test_parking_bays_are_not_task_endpoints(self, benchmark_map: Graph) -> None:

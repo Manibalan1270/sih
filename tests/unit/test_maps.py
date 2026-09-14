@@ -377,7 +377,7 @@ class TestWellFormedness:
                     ),
                 ),
             )
-            if name != "loop_map"
+            if name in ("warehouse_zoned_30", "warehouse_zoned_100")
             else name
             for name in ALL_MAP_NAMES
         ],
