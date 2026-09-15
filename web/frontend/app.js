@@ -239,6 +239,7 @@
     }
     drawWaits(f.robots);
     drawRoute(f.robots);
+    syncRunControl(f);
 
     const c = f.counters;
     $("c-done").textContent = c.tasks_completed;
@@ -276,16 +277,51 @@
 
   // ---- transport -----------------------------------------------------------
 
+  /* This page has no run state of its own to report -- it is a spectator by
+     construction -- so the lamp carries the link instead. A floor drawn from
+     frames that stopped arriving must not keep claiming to be live. */
+  function setLink(state) {
+    const lamp = $("lamp");
+    const label = $("lamp-label");
+    if (!lamp || !label) return;
+    if (state === "offline") { lamp.dataset.state = "error"; label.textContent = "no telemetry"; }
+    else if (state === "polling") { lamp.dataset.state = "paused"; label.textContent = "spectator · polling"; }
+    else { lamp.dataset.state = "live"; label.textContent = "spectator"; }
+  }
+
   function connect() {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws/telemetry`);
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.type === "map") drawMap(msg.data);
-      else if (msg.type === "frame") applyFrame(msg.data);
-      else if (msg.type === "idle") { $("empty").hidden = false; $("pause").disabled = true; }
-    };
-    ws.onclose = () => setTimeout(connect, 1000);
+    Telemetry.connect({
+      onMap: drawMap,
+      onFrame: applyFrame,
+      onIdle: () => { $("empty").hidden = false; $("pause").disabled = true; },
+      onLink: setLink,
+    });
+  }
+
+  /* Run Control describes the run you are watching until you say otherwise.
+     Both pages used to pin the scenario to a hardcoded default, so the overview
+     offered to start bench3 while visual30 was on screen -- pressing Start would
+     silently swap the fleet for a different one. Once the operator edits a
+     field, their choice stands and nothing here overwrites it. */
+  let formTouched = false;
+
+  for (const id of ["scenario", "seed", "robots", "tasks"]) {
+    const el = $(id);
+    if (el) el.addEventListener("input", () => { formTouched = true; });
+  }
+  $("scenario").addEventListener("change", () => { formTouched = true; });
+
+  function syncRunControl(f) {
+    if (formTouched) return;
+    const select = $("scenario");
+    if (f.scenario && [...select.options].some((o) => o.value === f.scenario)) {
+      select.value = f.scenario;
+    }
+    if (typeof f.seed === "number") $("seed").value = f.seed;
+    const speed = $("speed");
+    if (f.speed && [...speed.options].some((o) => Number(o.value) === f.speed)) {
+      speed.value = String(f.speed);
+    }
   }
 
   async function loadScenarios() {

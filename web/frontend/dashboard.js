@@ -123,10 +123,28 @@
 
   // ---- frames -------------------------------------------------------------
 
+  let linkState = "live";
+  let lamp = { state: "idle", label: "no run" };
+
   function setLamp(state, label) {
+    lamp = { state, label };
+    paintLamp();
+  }
+
+  /* The lamp reports the run, except when the link to it is broken -- then it
+     reports that instead, because a stale frame shown as "live" is a lie. */
+  function paintLamp() {
+    let { state, label } = lamp;
+    if (linkState === "offline") { state = "error"; label = "no telemetry"; }
+    else if (linkState === "polling") { label = `${label} · polling`; }
     $("lamp").dataset.state = state;
     $("lamp-label").textContent = label;
     $("run-status").textContent = label;
+  }
+
+  function setLink(state) {
+    linkState = state;
+    paintLamp();
   }
 
   function applyFrame(f) {
@@ -153,6 +171,7 @@
 
     drawRobots(f.robots);
     drawFleet(f.robots);
+    syncRunControl(f);
 
     const note = $("run-note");
     if (f.error) {
@@ -187,18 +206,41 @@
   }
 
   function connect() {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws/telemetry`);
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.type === "map") drawMini(msg.data);
-      else if (msg.type === "frame") applyFrame(msg.data);
-      else if (msg.type === "idle") goIdle();
-    };
-    ws.onclose = () => setTimeout(connect, 1000);
+    Telemetry.connect({
+      onMap: drawMini,
+      onFrame: applyFrame,
+      onIdle: goIdle,
+      onLink: setLink,
+    });
   }
 
   // ---- run control --------------------------------------------------------
+
+  /* Run Control describes the run you are watching until you say otherwise.
+     Both pages used to pin the scenario to a hardcoded default, so the overview
+     offered to start bench3 while visual30 was on screen -- pressing Start would
+     silently swap the fleet for a different one. Once the operator edits a
+     field, their choice stands and nothing here overwrites it. */
+  let formTouched = false;
+
+  for (const id of ["scenario", "seed", "robots", "tasks"]) {
+    const el = $(id);
+    if (el) el.addEventListener("input", () => { formTouched = true; });
+  }
+  $("scenario").addEventListener("change", () => { formTouched = true; });
+
+  function syncRunControl(f) {
+    if (formTouched) return;
+    const select = $("scenario");
+    if (f.scenario && [...select.options].some((o) => o.value === f.scenario)) {
+      select.value = f.scenario;
+    }
+    if (typeof f.seed === "number") $("seed").value = f.seed;
+    const speed = $("speed");
+    if (f.speed && [...speed.options].some((o) => Number(o.value) === f.speed)) {
+      speed.value = String(f.speed);
+    }
+  }
 
   async function loadScenarios() {
     const list = await (await fetch("/api/scenarios")).json();

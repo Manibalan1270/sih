@@ -22,8 +22,8 @@
     <li><a href="/simulation" class="current" aria-current="page">Live floor</a></li>
   </ul>
   <div class="rail-foot">
-    <span class="lamp" data-state="live"></span>
-    <span class="rail-foot-label">spectator</span>
+    <span class="lamp" id="lamp" data-state="live"></span>
+    <span class="rail-foot-label" id="lamp-label">spectator</span>
   </div>
 </nav>
 
@@ -143,6 +143,7 @@
   </div>
 </main>
 
+<script src="/static/telemetry.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

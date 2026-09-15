@@ -36,6 +36,48 @@
     <span class="status" id="run-status">idle</span>
   </header>
 
+  <!-- The four numbers an operator checks first, before reading anything else on
+       the page. Two of them should always be zero, which is why they are here:
+       a run is going well when this strip is boring. -->
+  <div class="kpis">
+    <div class="kpi">
+      <span class="kpi-icon safe" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <div>
+        <div class="kpi-label">Collisions</div>
+        <div class="kpi-value" id="c-coll">0</div>
+      </div>
+    </div>
+    <div class="kpi">
+      <span class="kpi-icon safe" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M8 2.5v5l3 1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.6"/></svg>
+      </span>
+      <div>
+        <div class="kpi-label">Coordination failures</div>
+        <div class="kpi-value" id="c-fail">0</div>
+      </div>
+    </div>
+    <div class="kpi">
+      <span class="kpi-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M2 11.5c2-4 4-4 6 0s4 4 6 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="4" r="1.6" fill="currentColor"/></svg>
+      </span>
+      <div>
+        <div class="kpi-label">Frames on the mesh</div>
+        <div class="kpi-value" id="c-frames">0</div>
+      </div>
+    </div>
+    <div class="kpi">
+      <span class="kpi-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none"><rect x="2.6" y="2.6" width="10.8" height="10.8" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M8 5.4V8l1.9 1.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </span>
+      <div>
+        <div class="kpi-label">Fleet time stopped</div>
+        <div class="kpi-value" id="c-stopped">0 s</div>
+      </div>
+    </div>
+  </div>
+
   <div class="grid">
     <div class="col-5 stack">
       <section class="card">
@@ -46,24 +88,44 @@
         <p class="hero-note" id="run-note">Start a run to put the fleet to work.</p>
       </section>
 
-      <div class="stat-grid">
-        <div class="stat">
-          <div class="stat-value" id="c-coll">0</div>
-          <div class="stat-label">Collisions</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value" id="c-fail">0</div>
-          <div class="stat-label">Coordination failures</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value" id="c-frames">0</div>
-          <div class="stat-label">Frames on the mesh</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value" id="c-stopped">0 s</div>
-          <div class="stat-label">Fleet time stopped</div>
-        </div>
+      <section class="card">
+    <p class="card-label">Run control</p>
+    <form id="run-form" class="stack" autocomplete="off">
+      <label class="field">
+        <span>Scenario</span>
+        <select id="scenario" name="scenario"></select>
+      </label>
+      <div class="form-row">
+        <label class="field">
+          <span>Seed</span>
+          <input id="seed" name="seed" type="number" min="0" value="1">
+        </label>
+        <label class="field">
+          <span>AMRs</span>
+          <input id="robots" name="robots" type="number" min="1" placeholder="default">
+        </label>
+        <label class="field">
+          <span>Tasks</span>
+          <input id="tasks" name="tasks" type="number" min="1" placeholder="default">
+        </label>
       </div>
+      <label class="field">
+        <span>Speed</span>
+        <select id="speed" name="speed">
+          <option value="1">1× real time</option>
+          <option value="2" selected>2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+          <option value="16">16×</option>
+        </select>
+      </label>
+      <div class="form-row">
+        <button type="submit" id="start" class="btn primary">Start run</button>
+        <button type="button" id="pause" class="btn" disabled>Pause</button>
+      </div>
+    </form>
+  </section>
+
     </div>
 
     <a class="col-7 watch" href="/simulation">
@@ -89,7 +151,7 @@
       </div>
     </a>
 
-    <section class="col-7 card">
+    <section class="col-12 card">
       <p class="card-label">Fleet</p>
       <div class="table-wrap">
         <table id="fleet-table">
@@ -101,46 +163,10 @@
       </div>
     </section>
 
-    <section class="col-5 card">
-      <p class="card-label">Run control</p>
-      <form id="run-form" class="stack" autocomplete="off">
-        <label class="field">
-          <span>Scenario</span>
-          <select id="scenario" name="scenario"></select>
-        </label>
-        <div class="form-row">
-          <label class="field">
-            <span>Seed</span>
-            <input id="seed" name="seed" type="number" min="0" value="1">
-          </label>
-          <label class="field">
-            <span>AMRs</span>
-            <input id="robots" name="robots" type="number" min="1" placeholder="default">
-          </label>
-          <label class="field">
-            <span>Tasks</span>
-            <input id="tasks" name="tasks" type="number" min="1" placeholder="default">
-          </label>
-        </div>
-        <label class="field">
-          <span>Speed</span>
-          <select id="speed" name="speed">
-            <option value="1">1× real time</option>
-            <option value="2" selected>2×</option>
-            <option value="4">4×</option>
-            <option value="8">8×</option>
-            <option value="16">16×</option>
-          </select>
-        </label>
-        <div class="form-row">
-          <button type="submit" id="start" class="btn primary">Start run</button>
-          <button type="button" id="pause" class="btn" disabled>Pause</button>
-        </div>
-      </form>
-    </section>
   </div>
 </main>
 
+<script src="/static/telemetry.js"></script>
 <script src="/static/dashboard.js"></script>
 </body>
 </html>

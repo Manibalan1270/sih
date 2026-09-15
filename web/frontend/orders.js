@@ -202,11 +202,10 @@
     if (!live) { live = true; loadStations(); }
     $("run-line").textContent =
       `${f.scenario} · seed ${f.seed} · ${f.robots.length} AMRs`;
-    const state = f.finished ? "done" : f.paused ? "paused" : "live";
-    const label = f.finished ? "finished" : f.paused ? "paused" : "live";
-    $("lamp").dataset.state = state;
-    $("lamp-label").textContent = label;
-    $("run-status").textContent = label;
+    setLamp(
+      f.finished ? "done" : f.paused ? "paused" : "live",
+      f.finished ? "finished" : f.paused ? "paused" : "live",
+    );
 
     drawRobots(f.robots);
     renderTasks(f.tasks || []);
@@ -228,21 +227,35 @@
     fillSelects();
     $("empty").hidden = false;
     $("run-line").textContent = "Nothing running yet";
-    $("lamp").dataset.state = "idle";
-    $("lamp-label").textContent = "no run";
-    $("run-status").textContent = "idle";
+    setLamp("idle", "no run");
+  }
+
+  let linkState = "live";
+  let lamp = { state: "idle", label: "no run" };
+
+  function setLamp(state, label) {
+    lamp = { state, label };
+    paintLamp();
+  }
+
+  /* The lamp reports the run, except when the link to it is broken -- then it
+     reports that instead, because a stale frame shown as "live" is a lie. */
+  function paintLamp() {
+    let { state, label } = lamp;
+    if (linkState === "offline") { state = "error"; label = "no telemetry"; }
+    else if (linkState === "polling") { label = `${label} \u00b7 polling`; }
+    $("lamp").dataset.state = state;
+    $("lamp-label").textContent = label;
+    $("run-status").textContent = label;
   }
 
   function connect() {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws/telemetry`);
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.type === "map") { drawMap(msg.data); loadStations(); }
-      else if (msg.type === "frame") applyFrame(msg.data);
-      else if (msg.type === "idle") goIdle();
-    };
-    ws.onclose = () => setTimeout(connect, 1000);
+    Telemetry.connect({
+      onMap: (data) => { drawMap(data); loadStations(); },
+      onFrame: applyFrame,
+      onIdle: goIdle,
+      onLink: (state) => { linkState = state; paintLamp(); },
+    });
   }
 
   // ---- announcing ---------------------------------------------------------
