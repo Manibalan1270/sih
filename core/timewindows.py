@@ -294,7 +294,15 @@ class ResourceTable:
     # -- querying -------------------------------------------------------------
 
     def bookings(self, resource: Resource, *, exclude_robot: int = -1) -> tuple[Booking, ...]:
-        """Every booking on ``resource`` in enter order, robot id breaking ties."""
+        """Every booking on ``resource`` in enter order, robot id breaking ties.
+
+        The queries below deliberately do **not** call this. Each one iterates
+        ``_index`` directly and skips the excluded robot inline, because every call
+        here allocates a tuple that the caller walks once and discards -- and the
+        free-time-window search calls them tens of thousands of times per plan
+        (FR-3.6 allows 50 ms). ``_index`` buckets are kept sorted by
+        ``(enter_ms, robot_id)`` on insert, so iterating one directly is in the same
+        order this returns. This stays as the readable public accessor."""
         return tuple(
             b for b in self._index.get(resource, ()) if b.robot_id != exclude_robot
         )
@@ -303,8 +311,11 @@ class ResourceTable:
         self, resource: Resource, enter_ms: int, exit_ms: int, *, exclude_robot: int = -1
     ) -> bool:
         """Capacity-one test: no other booking within the margin of the window."""
-        for booking in self.bookings(resource, exclude_robot=exclude_robot):
-            if booking.overlaps(enter_ms, exit_ms, self.margin_ms):
+        margin = self.margin_ms
+        for booking in self._index.get(resource, ()):
+            if booking.robot_id == exclude_robot:
+                continue
+            if booking.overlaps(enter_ms, exit_ms, margin):
                 return False
         return True
 
@@ -313,8 +324,11 @@ class ResourceTable:
     ) -> Booking | None:
         """The earliest-ending booking that makes ``is_free`` false, or None."""
         found: Booking | None = None
-        for booking in self.bookings(resource, exclude_robot=exclude_robot):
-            if booking.overlaps(enter_ms, exit_ms, self.margin_ms):
+        margin = self.margin_ms
+        for booking in self._index.get(resource, ()):
+            if booking.robot_id == exclude_robot:
+                continue
+            if booking.overlaps(enter_ms, exit_ms, margin):
                 if found is None or booking.exit_ms < found.exit_ms:
                     found = booking
         return found
@@ -326,8 +340,9 @@ class ResourceTable:
         have *left* before the asker may enter. Precedence, not timing."""
         return tuple(
             b
-            for b in self.bookings(resource, exclude_robot=exclude_robot)
-            if (b.enter_ms, b.robot_id) < (enter_ms, exclude_robot)
+            for b in self._index.get(resource, ())
+            if b.robot_id != exclude_robot
+            and (b.enter_ms, b.robot_id) < (enter_ms, exclude_robot)
         )
 
     def lane_exit_after(
@@ -339,7 +354,9 @@ class ResourceTable:
         0 when nobody is ahead.
         """
         latest = 0
-        for booking in self.bookings(resource, exclude_robot=exclude_robot):
+        for booking in self._index.get(resource, ()):
+            if booking.robot_id == exclude_robot:
+                continue
             if booking.enter_ms < enter_ms and booking.exit_ms + config.FOLLOW_GAP_MS > latest:
                 latest = booking.exit_ms + config.FOLLOW_GAP_MS
         return latest
@@ -350,7 +367,9 @@ class ResourceTable:
         """FIFO violated from the other side: someone booked to enter *after* me who
         would then leave *before* me. I cannot change their plan, so I must not take
         that slot. Returns the offender, or None."""
-        for booking in self.bookings(resource, exclude_robot=exclude_robot):
+        for booking in self._index.get(resource, ()):
+            if booking.robot_id == exclude_robot:
+                continue
             if booking.enter_ms > enter_ms and booking.exit_ms < exit_ms + config.FOLLOW_GAP_MS:
                 return booking
         return None
