@@ -7,8 +7,9 @@ a reviewer can walk the acceptance table and find each one.
 Cases that cannot be discharged in software are declared here as skips with the
 reason, rather than quietly omitted:
 
-* TC-23 -- a human walking into an aisle. The reroute half is exercised by the
-  obstacle machinery in Phase 9; the sensor behaviour itself is hardware.
+* TC-23 -- a human walking into an aisle. Neither half is covered: the sensor
+  behaviour is hardware, and the reroute half needs an obstacle model that does
+  not exist yet. See the skip for the detail.
 * TC-25 -- ESP32 SRAM budget. Discharged by the Appendix D analysis, not by Python.
 * TC-26 -- radio range confirming ASM-7. Requires physical measurement, and OI-6
   makes it mandatory before any physical demonstration.
@@ -169,8 +170,15 @@ class TestTC10NobodyCanBid:
 
 
 @pytest.mark.tc
-class TestTC4GatewayPause:
-    """AC-4: pausing order intake does not interrupt held work."""
+class TestTC6GatewayDisconnect:
+    """AC-4 and SRS TC-6: the gateway going away does not interrupt held work.
+
+    Named TestTC4GatewayPause until this audit. SRS TC-4 is the blocked-aisle
+    case -- an aisle obstructed mid-route, repaired locally within 50 ms -- and
+    nothing here tests it, so the old name reported coverage the suite did not
+    have. TC-4 is discharged by the obstacle model (Phase 4), together with
+    TC-23; this case is TC-6, "the order gateway is disconnected mid-run".
+    """
 
     def test_held_tasks_complete_after_gateway_stops(self) -> None:
         allocator = AuctionAllocator()
@@ -365,6 +373,154 @@ class TestTC28MalformedFrame:
         assert len(sim.completed) == len(sim.task_set)
 
 
+class TestTC21ZoneLocalAuction:
+    """A task is announced in a zone at fleet scale.
+
+    Expected: only AMRs in that zone and adjacent zones bid, and the frame count
+    matches the NFR-1.12 budget of <=40 auction frames per task (FR-9.2, FR-9.3).
+
+    This is the requirement that makes the auction scale: a flood auction costs
+    O(fleet) frames per task, which at 100 AMRs is the difference between a mesh
+    that works and one that saturates. `tests/unit/test_zones.py` pins the
+    partition rule in isolation; this asserts the fleet actually obeys it, and
+    counts the frames the budget is written in terms of.
+    """
+
+    def _run_scale100(self, steps: int = 400):
+        """A short slice of the 100-AMR scenario, recording who bid on what.
+
+        `Bus.broadcast` is where every frame enters the mesh, so wrapping it
+        observes bids without the robots knowing they are watched.
+        """
+        sim = build(scenarios.get("scale100"), seed=1,
+                    allocator=AuctionAllocator(), task_count=40, waves=1)
+        bids: list[tuple[int, int]] = []  # (sender robot_id, task_id)
+        original = sim.mesh.send
+
+        def watching(sender: int, payload, now_ms: int):
+            if type(payload).__name__ == "Bid":
+                bids.append((sender, payload.task_id))
+            return original(sender, payload, now_ms)
+
+        sim.mesh.send = watching
+        for _ in range(steps):
+            sim.step()
+        return sim, bids
+
+    def test_only_robots_in_the_zone_or_an_adjacent_one_bid(self) -> None:
+        sim, bids = self._run_scale100()
+        assert bids, "no bids were observed; the test is not exercising the auction"
+
+        zones = sim.zones
+        assert zones.enabled, "scale100 must be zoned for this case to mean anything"
+        tasks = {t.task_id: t for t in sim.task_set}
+        robot_zone = {r.robot_id: r.zone_id for r in sim.engine.robots}
+
+        for sender, task_id in bids:
+            task = tasks.get(task_id)
+            if task is None:
+                continue
+            assert zones.eligible_to_bid(robot_zone[sender], task.zone_id), (
+                f"robot {sender} in zone {robot_zone[sender]} bid on task "
+                f"{task_id} in zone {task.zone_id}, which is neither its own zone "
+                f"nor adjacent to it (FR-9.3)"
+            )
+
+    def test_auction_frames_per_task_meet_the_nfr_budget(self) -> None:
+        """NFR-1.12: <=40 auction frames per task at 100 AMRs.
+
+        Counted as BID + CLAIM, which is what section 4.9 prices the auction in.
+        The budget is per *task announced*, so re-announcements of the same task
+        are not double-counted against it.
+        """
+        sim, _ = self._run_scale100()
+        announced = {
+            t.task_id for t in sim.task_set if t.task_id not in {x.task_id for x in sim.pending}
+        }
+        announced_count = max(1, len(announced))
+        frames = sim.mesh.stats.auction_frames()
+        per_task = frames / announced_count
+        assert per_task <= 40, (
+            f"{per_task:.1f} auction frames per task at 100 AMRs, over the "
+            f"NFR-1.12 budget of 40 ({frames} frames, {announced_count} tasks)"
+        )
+
+
+class TestTC17BatteryReserve:
+    """An AMR's battery falls below reserve during a task.
+
+    Expected: it stops bidding, completes the current task, then routes to a
+    charging node (FR-6.7, FR-4.15, BR-4, Appendix A's CHARGING state).
+
+    The ordering is the point. BR-4 is explicit that a robot below reserve
+    *finishes work it already holds* -- abandoning it would hand a half-done job
+    back to the fleet and make low charge a source of churn rather than a reason
+    to withdraw quietly.
+    """
+
+    def test_below_reserve_a_robot_stops_bidding(self) -> None:
+        """FR-4.15: charge below the reserve is a refusal to bid, not a penalty."""
+        auctioneer = Auctioneer(robot_id=1)
+        allowed, reason = auctioneer.may_bid(
+            queue_length=0,
+            battery_pct=config.BATTERY_RESERVE_PCT - 1,
+            zone_eligible=True,
+            faulted=False,
+        )
+        assert not allowed
+        assert "reserve" in reason
+
+        allowed, _ = auctioneer.may_bid(
+            queue_length=0,
+            battery_pct=config.BATTERY_RESERVE_PCT,
+            zone_eligible=True,
+            faulted=False,
+        )
+        assert allowed, "at exactly the reserve an AMR is still eligible"
+
+    def test_it_finishes_held_work_before_charging(self, sim) -> None:
+        """BR-4: the held task completes; the robot does not drop it and run."""
+        robot = sim.engine.robots[0]
+        task = small_task(500, pickup=sim.graph.pickup_nodes[0],
+                          drop=sim.graph.drop_nodes[0])
+        robot.accept_task(task, 0)
+        robot.battery_pct = config.BATTERY_RESERVE_PCT - 5
+
+        held_id = robot.queue.current.task_id
+        for _ in range(20_000):
+            sim.step()
+            if robot.queue.current is None:
+                break
+        assert robot.queue.current is None, "the held task never completed"
+        assert held_id not in {t.task_id for t in robot.released_tasks}, (
+            "a robot below reserve handed back work it had already committed to; "
+            "BR-4 requires it to finish first"
+        )
+
+    def test_it_then_routes_to_a_charger_and_recovers(self, sim) -> None:
+        """Appendix A: CHARGING is entered below reserve with held work done, and
+        left once charge is restored. Both halves, because a robot that reaches a
+        charger and never leaves is the same stall as one that never reaches it."""
+        chargers = set(sim.graph.chargers)
+        assert chargers, "the benchmark map must offer somewhere to charge"
+
+        robot = sim.engine.robots[0]
+        robot.battery_pct = config.BATTERY_RESERVE_PCT - 5
+
+        reached = False
+        for _ in range(40_000):
+            sim.step()
+            if robot.current_node in chargers:
+                reached = True
+            if reached and robot.battery_pct >= config.BATTERY_RESUME_PCT:
+                break
+        assert reached, "a robot below reserve never reached a charging node"
+        assert robot.battery_pct >= config.BATTERY_RESUME_PCT, (
+            f"reached a charger but only recovered to {robot.battery_pct}%; "
+            f"Appendix A leaves CHARGING at {config.BATTERY_RESUME_PCT}%"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Cases that cannot be discharged in software
 # ---------------------------------------------------------------------------
@@ -372,9 +528,46 @@ class TestTC28MalformedFrame:
 
 @pytest.mark.tc
 @pytest.mark.skip(
-    reason="TC-23: the reroute half is covered by simulator/obstacles.py in "
-    "Phase 9, but detecting a human with a forward obstacle sensor (IF-2.4) is "
-    "hardware behaviour and cannot be verified here."
+    reason="TC-7: the coordination half is already discharged -- the mesh is "
+    "ESP-NOW/in-process and never touches the access point, TC-6 shows the fleet "
+    "completing held work with the gateway gone, and "
+    "tests/test_architecture.py::TestDashboardIsReadOnly enforces structurally "
+    "that no off-robot component can command a robot. The half that is NOT "
+    "covered is local telemetry buffering (FR-1.7, FR-6.4): nothing buffers "
+    "telemetry anywhere. `Telemetry` exists in communication/messages.py as a "
+    "wire type and no robot ever produces, queues or replays one, so 'telemetry "
+    "buffers locally' has no implementation to test. Asserting only the "
+    "coordination half here would report TC-7 as covered when its distinguishing "
+    "claim is not."
+)
+def test_tc7_access_point_lost() -> None:
+    ...
+
+
+@pytest.mark.tc
+@pytest.mark.skip(
+    reason="TC-8: not implemented. FR-5.13 and FR-7.6 widen the safety margin to "
+    "MARGIN_DEGRADED_MS once the clock beacon has been silent for "
+    "BEACON_STALE_MS. Both constants are defined in core/config.py and neither is "
+    "read anywhere: BEACON exists as a message type and a codec format, but no "
+    "robot sends one, no robot receives one, and ResourceTable is never "
+    "constructed with a widened margin. The case needs the FE-7 clock half built "
+    "first -- Phase 5 of the delivery plan, alongside position confidence."
+)
+def test_tc8_clock_beacon_suppressed() -> None:
+    ...
+
+
+@pytest.mark.tc
+@pytest.mark.skip(
+    reason="TC-23: NEITHER half is covered. Detecting a human with a forward "
+    "obstacle sensor (IF-2.4) is hardware behaviour and cannot be verified here, "
+    "but the reroute half is software and simply does not exist: there is no "
+    "obstacle model in simulator/, so FR-6.6's stop-wait-repair sequence is "
+    "unexercised. An earlier version of this message credited "
+    "simulator/obstacles.py, which is not in the tree -- it read as coverage "
+    "that was never written. Building it is Phase 4 of the delivery plan and "
+    "also discharges TC-4."
 )
 def test_tc23_non_cooperative_obstacle() -> None:
     ...

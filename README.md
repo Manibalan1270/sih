@@ -241,6 +241,77 @@ All found while implementing; all should be corrected in v1.1.
     only way out. `Graph.is_well_formed` now reports no failing pair on any map, and it
     is a plain test rather than an xfail. The SRS should state the condition.
 
+14. **Section 8.1's compliance table is stale in the project's favour.** Three rows no
+    longer describe the system. "A multi-robot simulation featuring at least three AMRs"
+    is recorded as *Open -- build required*; it is built and exceeded -- `bench3` (3),
+    `visual30` (30, Webots 3D) and `scale100` (100) all run. "Zero inter-robot collisions"
+    and the "20% reduction" rows are recorded as *Open -- measurement required*; both have
+    since been measured, the first met on the graded benchmark and the second not (`0.938x`
+    against `<=0.8x`). A compliance table that is wrong in either direction is worse than
+    no table: two of these understate the work and one overstates what is settled. **The
+    living version is the audit**, which is regenerated from the code and the suite rather
+    than maintained by hand. Section 8.1 should be replaced by it at v1.1.
+
+15. **The auction window in the SRS and in the code disagreed.** NFR-1.8 specifies a
+    300 ms sealed-bid window; the implementation ran 200 ms, tuned for auction latency and
+    never reconciled, so the system was quietly non-conformant to a numbered requirement.
+    **Resolved by conforming**, at a measured price: ten `bench3` seeds give B mean
+    `301,438 ms` at 200 against `308,858 ms` at 300 -- ratios `0.938` and `0.961`, zero
+    collisions either way. Conformance costs ~2.5% of makespan and is kept, because 300 is
+    what the specification says and 2.5% changes no criterion's outcome: AC-3 needs `0.800`
+    and neither value approaches it. If the gap ever closes to within that margin, take the
+    deviation deliberately and amend NFR-1.8 with the measurement.
+
+    A methodological note worth keeping, because it produced a wrong answer first: a
+    runtime patch of `config.AUCTION_WINDOW_MS` does **not** fully take effect.
+    `AuctionAllocator.reannounce_after_ms` is a dataclass field default, so it binds the
+    constant at import and the re-announce timing keeps its old value while the bid window
+    moves. Measured that way the two settings looked identical to within 0.01%. Any sweep
+    over a constant read into a default argument or field initialiser has to edit the
+    source, not the module attribute.
+
+16. **A station is a point, and every other resource is sized to contain a robot.**
+    A junction region is two `JUNCTION_FOOTPRINT_MM` wide precisely so that releasing it
+    means having physically left it. A station is a leaf node on a spur with no width at
+    all, so a robot that steps from the station onto its spur *releases the station step*
+    while half its body -- 250 mm against a `COLLISION_DISTANCE_MM` of 500 -- is still
+    inside the station. Precedence then says the station is free when it is not.
+
+    **This is the `visual30` collision, and it is open.** On seed 0 at 346,800 ms r2 left
+    station J110, crawled 322 mm down the spur and stopped there holding headway behind
+    r3; r12 entered J110 on a booking that had been correctly released, and the two
+    overlapped at 322 mm. Neither robot did anything wrong and no rule was violated --
+    the model cannot represent a robot straddling two resources. It is defect 10
+    (junction occupancy specified as a time) in a place the footprint fix never reached.
+    Pinned by `test_ac2_holds_at_thirty_amr_density`, a **strict xfail**: the day it is
+    fixed, that test fails loudly rather than passing silently.
+
+    Note what it is *not*: raising `YIELD_SPEED_MM_S` did not cause it, it only made the
+    overlap reachable. Extending the station's time window does not fix it either,
+    because r2 was simply *late* -- which is the whole reason this system executes by
+    precedence rather than by timing.
+
+    **Two fixes were tried and both rejected, which is the useful part.** Modelling a
+    forward sensor for a robot standing at a node is right in principle -- such a robot
+    had *infinite* forward clearance, which is plainly wrong -- but it does not reach
+    this case, because r12 commits its plan and pulls away inside a single tick and so
+    was never sensed on the lane it was entering. Requiring a predecessor to be clear of
+    the *spur* as well as the station does fix the collision, and costs far too much:
+    a robot whose plan ends at or just past a station never advances its plan index past
+    that step, so it blocks the station for ever. That produced deadlock at six AMRs
+    (`test_six_robots_no_longer_form_a_wait_for_cycle`) and cut `visual30` throughput
+    from 187 delivered tasks to 74 across three seeds. Trading a rare collision for a
+    reliable deadlock is a worse system, so it was reverted.
+
+    **The fix that should work** is the one the junctions already use: give the station a
+    footprint. Let the station resource cover its leaf *plus* `COLLISION_DISTANCE_MM` of
+    the spur, in `ResourceModel`, so the windows account for a robot's body and
+    precedence keeps working at exactly the granularity it already does everywhere else.
+    That is a planner change and wants its own measurement pass.
+
+    AC-2 passed throughout, which is the second lesson: its gate was thirty seeds of
+    `bench3`, and three robots on that map do not produce this conflict at all.
+
 ## Status
 
 Last updated 2026-09-15.
@@ -270,13 +341,54 @@ Last updated 2026-09-15.
 | **Fleet dashboard + Run Control** (Phase 12, AC-6): `py -m web.backend.app`, then <http://127.0.0.1:8000>. Read-only by construction (FR-8.4). Three pages: `/` overview, `/orders` order entry, `/simulation` live floor. | `tests/unit/test_web.py`, `tests/test_architecture.py::TestDashboardIsReadOnly`. The overview and the live floor were confirmed serving; **the order-entry page has never been exercised**. |
 | **Order gateway** (FR-4.1, IF-3.2): `gateway/orders.py` accepts a journey and appends it to the running task set, where the allocator announces it like generated work; `gateway/api.py` serves `/api/orders`. Refuses junction endpoints (defect 13) and bays. | `tests/unit/test_gateway.py`, `tests/test_architecture.py::TestTheOrderGatewayNamesNoRobot` -- **neither has been run**. |
 | **Webots 3D** (AC-5/AC-6 visual): `scripts/generate_world.py`, `webots/controllers/fleet_supervisor`, `scripts/probe_webots.py`. This host sustains 30 AMRs at ~7x real time. | `tests/unit/test_webots.py`; `config/webots_capacity.json` |
+| **Planning inside the FR-3.6 budget.** `ResourceTable`'s query path no longer allocates: `is_free`, `blocking`, `predecessors`, `lane_exit_after` and `cuts_in_front_of` walk the resource's booking list directly instead of calling `bookings()`, which built and discarded a fresh tuple on each of ~35,000 calls per plan. Median plan on the 100-robot map against a 24-plan table: **65-82 ms -> 22-24 ms**, against a 50 ms deadline. | `tests/unit/test_planner_timewindow.py::TestBudget` |
 | Full suite | **602 passed, 3 skipped** (hardware-only TCs), `py -m pytest -q` |
 
 Acceptance criteria as they stand: **AC-1** largely met (70 traced TCs); **AC-2** zero collisions
 across the 30-seed `bench3` gate; **AC-4** gateway-pause behavior verified; **AC-5** met;
-**AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open,
-and further off than previously measured**: with `YIELD_SPEED_MM_S` held at its safe, tested
-value, B is *slower* than A at `1.21x` (requirement is `<=0.8x`) -- see the note under Step 6.
+**AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open at
+`0.938x`** against a `<=0.8x` requirement, with `YIELD_SPEED_MM_S` back at 700 -- a trade against
+AC-2 at 30-AMR density that `core/config.py` documents in full.
+
+#### Why AC-3 is not a tuning problem (measured)
+
+B spends **85% of its time moving** on `bench3`: of a 328 s seed-0 run, 14.7% is stopped and only
+2.1% is precedence hold. Coordination is not the cost. B already drives *less* than A on most
+seeds -- the auction's marginal-cost pricing is doing its job -- and makespan tracks the **busiest
+robot's driving time** almost exactly (seed 0: busiest 301,640 ms against a 328,220 ms makespan).
+
+That bounds what allocation can win. Splitting B's driving perfectly across the three AMRs -- an
+allocator that cannot exist, since it would need to know every future task -- gives a mean ratio
+of **0.836**. AC-3 asks for 0.800. *Perfect balance is not enough*, so no amount of bid tuning
+reaches it. Three levers were measured against the ten-seed gate and all are recorded here so
+they are not tried again:
+
+| lever | result |
+|---|---|
+| committed-load bid term (w3, min-sum -> min-max) | 0.938 -> 0.954 at w3=0.25, 1.037 at w3=1.0. Worse: it makes robots refuse well-fitting work, and the added distance exceeds the balance won. Reverted. |
+| `QUEUE_CAP` 1 / 2 / 3 / 4 | 1.075 / **0.938** / 1.055 / 1.218. Already at its optimum. |
+| deferred bid filter | 0.938 -> 1.295. Off by default (`DEFER_BID_ON_CONTESTED_PICKUP`). |
+
+The gap is **total distance**, not its distribution: on seeds 6, 8 and 9 the greedy auction
+allocates *worse* than A's round-robin (ratios 1.178, 1.094, 1.157; seed 9 is above 1.0 even
+under perfect balance). Closing it needs a better allocator -- reassignment, regret-based
+bidding, or route improvement -- not a constant. Which leads to:
+
+#### FR-4.10 is specified but not implemented
+
+`Auctioneer.beats_holder` implements the `DELTA_MS` stability margin FR-4.10 and BR-6 require for
+a claimed task to change hands on a clearly better bid -- and **nothing in the codebase calls
+it**. A task is re-announced only when a robot *voluntarily* releases it, so work bound early
+stays bound however the fleet's load then changes. This is the single largest missing piece
+between the current allocator and one that could close AC-3.
+
+A first attempt at it (holder releases its queue tail, peers re-bid) is **not** in the tree: it
+lost tasks. Releasing before knowing anyone will take it drops the task into an announced-but-
+unheld limbo the recovery path does not cover -- 9 of 12 tasks stranded on `bench3` seed 0. The
+correct shape is what `beats_holder` was written for: the holder keeps the task and gives it up
+only once a peer has actually bid lower by more than `DELTA_MS`. Note the stock system *does*
+recover an ordinary unbid announcement (verified 12/12 with every robot below battery reserve);
+only the release-first path strands work.
 
 ### Left to do, in order
 
@@ -293,11 +405,15 @@ value, B is *slower* than A at `1.21x` (requirement is `<=0.8x`) -- see the note
    prove B's safety result (`0` collisions, `0` coordination failures, `0` deadlock
    cycles), while A records `24` collisions and `23` coordination failures. AC-2 is covered
    by `tests/coordination/test_safety_cases.py::test_ac2_zero_collisions_across_thirty_bench3_seeds`.
-   AC-4 is covered by `tests/coordination/test_tc.py::TestTC4GatewayPause`: stopping the
+   AC-4 is covered by `tests/coordination/test_tc.py::TestTC6GatewayDisconnect`: stopping the
    gateway after tasks are held still completes every held task.
 
-   The auction window is tuned to `200 ms` (from `300 ms`) and the approach zone widened to
-   `3,500 mm` (from `3,000 mm`) -- both safe, kept. A third change, raising `YIELD_SPEED_MM_S`
+   The approach zone is widened to `3,500 mm` (from `3,000 mm`) -- safe, kept. The auction
+   window was also tuned to `200 ms`, which made the system non-conformant to NFR-1.8's
+   specified `300 ms`; it has since been **restored to `300 ms`**. That costs about 2.5% of
+   makespan -- ten seeds give B `301,438 ms` at 200 against `308,858 ms` at 300, ratios
+   `0.938` and `0.961`, zero collisions either way -- and is kept because 300 is what the
+   specification says and 2.5% changes no criterion's outcome. A third change, raising `YIELD_SPEED_MM_S`
    to `700 mm/s`, was tried in the same sweep to push B's makespan down further, and briefly
    landed on `main`. It was reverted, re-investigated, and **re-landed at `600 mm/s`** once the
    defect it was measured against turned out to be stale: `JUNCTION_OCCUPANCY_MS` (Appendix E,
@@ -319,8 +435,12 @@ value, B is *slower* than A at `1.21x` (requirement is `<=0.8x`) -- see the note
    section). Resolve that before treating `600` as settled, and widen
    `TestYieldSpeedDoesNotGovernRegionSafety` past `bench3` either way.
 
-   AC-3 also still needs re-measurement against the new baseline; no number has been taken
-   since the yield speed changed and the bid filter landed.
+   AC-3 has since been re-measured against this baseline: ten seeds, `YIELD_SPEED_MM_S` 700 and
+   the bid filter off, give B `301,438 ms` against A `321,252 ms` -- `0.938x`. The 30-AMR
+   collision at raised yield speed **does reproduce** (1 collision, 1 coordination failure on
+   `visual30` seed 0 at 120 tasks), and 240 stays clean there; the trade is recorded at
+   `YIELD_SPEED_MM_S` in `core/config.py`. See "Why AC-3 is not a tuning problem" above for
+   what does and does not move the number.
 3. ~~A duplicate completion.~~ **Resolved, and the "left to do" claim was stale.** The
    `visual30` seed-0 121/120 report predates `Intent.held_task_id` (FR-4.8 healing: a robot
    whose peer reports holding, or completing, the same task relinquishes or drops its own copy

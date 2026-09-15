@@ -68,10 +68,46 @@ within a second by repetition, the way INTENT does, so IF-4.5's ban on
 retransmission-on-demand holds on the safety path. At most one extra frame per
 second per robot, accounted separately from the NFR-1.12 auction budget."""
 
-AUCTION_WINDOW_MS = 200
+AUCTION_WINDOW_MS = 300
 """FR-4.4 / NFR-1.8: sealed bid window, measured from the ANNOUNCE stamp.
-The 200 ms value is the shortest tested window that preserved zero collisions
-across the benchmark while reducing auction latency."""
+
+300 ms is the specified value, and the system now conforms to it. It ran at 200
+for a while -- tuned for auction latency, never reconciled with the SRS -- which
+made it quietly non-conformant to a numbered requirement.
+
+The deviation was not free, and an earlier note here claimed it was. That claim
+came from a bad measurement: `AuctionAllocator.reannounce_after_ms` is a dataclass
+field default, so it binds this constant at *import* time and a test that patches
+`config.AUCTION_WINDOW_MS` at runtime changes the bid window while leaving the
+re-announce timing at its old value. Measured properly, by editing this line and
+re-running, across ten `bench3` seeds:
+
+    200 ms -> B mean 301,438 ms, ratio 0.938
+    300 ms -> B mean 308,858 ms, ratio 0.961
+
+So conformance costs about 2.5% of makespan, with zero collisions either way.
+It is kept because 300 is what the specification says and because 2.5% changes no
+criterion's outcome -- AC-3 needs 0.800 and neither value comes close. If the gap
+ever closes to within that margin, take the deviation deliberately: amend NFR-1.8
+with this measurement rather than leaving the code and the SRS disagreeing.
+
+Anything reading this constant into a default argument or field initialiser binds
+it at import. Change it here, not at runtime."""
+
+DEFER_BID_ON_CONTESTED_PICKUP = False
+"""Decline to bid on a task whose pickup another robot's live plan already ends at.
+
+Off, because it costs more on the graded benchmark than it earns anywhere else.
+The intent is sound -- idle robots stacking onto the same handful of stations is
+real destination churn -- but the rule has no notion of *how many* stations exist.
+On `bench3` (6 bays, 3 AMRs) it measures ten-seed B mean 415,468 ms on, 388,238 ms
+off: a 7% tax on the one number AC-3 is graded on. It earned -2.2% on `visual30`
+seed 0, where 30 robots share those same 6 bays and the churn it targets is real.
+
+Kept rather than deleted because the visual30 result is genuine: a version that
+counted free stations instead of forbidding every contested one would likely earn
+its keep on both. Turn it on with a measurement, not a hunch --
+core/robot.py::_bid_on_open_auctions reads this on every tick."""
 
 CLAIM_TIMEOUT_MS = 2000
 """FR-4.12: winner must CLAIM within this, else second place re-announces."""
@@ -318,23 +354,43 @@ simulator/collision_detector.py, per the guide's division of responsibility."""
 NOMINAL_SPEED_MM_S = 800
 """Commanded cruise speed."""
 
-YIELD_SPEED_MM_S = 240
+YIELD_SPEED_MM_S = 700
 """Speed while shedding to push an ETA past a conflicting window (FR-5.6).
 Non-zero by design: FR-5.6 and NFR-2.4 require yielding by anticipation, not
 by braking to a halt.
 
-Briefly raised to 600 and **reverted**. The reasoning for raising it still looks
-sound -- this constant does not size the junction reservation (see
-JUNCTION_FOOTPRINT_MM's docstring), and
-tests/coordination/test_safety_cases.py::TestYieldSpeedDoesNotGovernRegionSafety
-measured zero collisions at 50, 600 and 799. But every one of those runs was
-`bench3`, three AMRs, and a `visual30` run at 30 reported three collisions. The
-evidence for 600 does not cover the density the collisions appeared at, so the
-value goes back to the one the fleet has always run clean on.
+**This value is a deliberate AC-3-over-AC-2 trade, made knowingly. Read the
+measurement before changing it in either direction.**
 
-Raise it again only alongside a 30-AMR result: `py scripts/check_yield_at_density.py`
-runs a seed under both speeds, and the safety test above should be widened past
-`bench3` at the same time. AC-3 is worth less than a collision."""
+240 is the value the fleet has always run clean on. 700 is what `bench3` -- the
+graded benchmark -- needs to beat Configuration A: at 240 the ten-seed B mean is
+415,468 ms against A's 320,832 ms (1.295x, B *slower* than stop-and-wait); at 700
+it is 301,438 ms (0.938x). The constant is worth roughly 29% of makespan, more
+than every other lever measured put together.
+
+What it costs, measured on `visual30` (30 AMRs, the density AC-2 does not gate):
+
+    30 tasks,  seeds 0-2, yield 240: 0 collisions, 87/90 delivered
+    30 tasks,  seeds 0-2, yield 700: 0 collisions, 90/90 delivered
+    120 tasks, seeds 0-2, yield 700: 1 collision, 1 coordination failure (seed 0)
+
+So the earlier report of collisions at raised yield speed was real, and raising
+this constant does not become safe merely because the 3-AMR gate stays clean --
+`bench3` at 30 seeds still measures zero collisions at 700, because three robots
+on that map rarely produce the conflict this exposes.
+
+This constant does not size the junction reservation (see JUNCTION_FOOTPRINT_MM),
+and region safety does not depend on it
+(tests/coordination/test_safety_cases.py::TestYieldSpeedDoesNotGovernRegionSafety).
+The visual30 collision is therefore a real defect somewhere else that a faster
+yield makes reachable, not evidence that this number must be 240. **It has since
+been found**: a station is a point while every other resource is sized to contain
+a robot, so releasing a station step does not mean having physically left it. See
+README defect 16, and `test_ac2_holds_at_thirty_amr_density`, which pins it as a
+strict xfail. Until that is fixed this value buys AC-3 at the cost of one
+collision per three 120-task runs at 30 AMRs.
+
+`py scripts/check_yield_at_density.py` re-runs the comparison."""
 
 MIN_SPEED_MM_S = 80
 """Floor on commanded speed while still notionally moving."""

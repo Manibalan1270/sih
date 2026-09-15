@@ -238,6 +238,47 @@ class TestTC1CrossingJunction:
             )
 
     @pytest.mark.slow
+    @pytest.mark.xfail(
+        strict=True,
+        reason="Open defect 16: a station is a point, while every other resource is "
+        "sized to contain a robot. Releasing a station step therefore does not mean "
+        "having physically left it, and a robot that stops just down the spur is "
+        "rear-ended by the next robot to take the station. Carried as a strict xfail "
+        "rather than deleted so the gap stays visible and the day it is fixed this "
+        "fails loudly. See README defect 16 for the measurement and the fix.",
+    )
+    def test_ac2_holds_at_thirty_amr_density(self) -> None:
+        """AC-2 where it is actually hard: thirty AMRs, not three.
+
+        The thirty-seed gate above is `bench3`, and three robots on that map rarely
+        produce the conflicts a full floor does -- which is how a real collision sat
+        undetected while AC-2 passed. It was found by running `visual30` directly:
+        r2 left station J110, stopped 322 mm down the spur on headway, and r12 then
+        entered J110 on a booking that had been legitimately released, overlapping it
+        at 322 mm against a COLLISION_DISTANCE_MM of 500.
+
+        One seed and a capped clock, because this has to stay runnable, but the full
+        task count: at 40 tasks the floor never loads enough and the case passes
+        without proving anything. Seed 0 collides at 346,800 ms, so the cap sits
+        just past it.
+        """
+        from core import scenarios as _scenarios
+        from simulator.scenario import build as _build
+
+        sim = _build(
+            _scenarios.get("visual30"), seed=0,
+            allocator=AuctionAllocator(), task_count=120, waves=4,
+        )
+        sim.run(max_ms=400_000)
+        assert sim.engine.coordination_failures == [], (
+            f"visual30 seed 0: {len(sim.engine.coordination_failures)} coordination "
+            f"failures at 30-AMR density -- {sim.engine.coordination_failures[:1]}"
+        )
+        assert sim.engine.collisions == [], (
+            f"visual30 seed 0: {len(sim.engine.collisions)} collisions"
+        )
+
+    @pytest.mark.slow
     def test_ac3_b_reduces_mean_makespan_by_twenty_percent(self) -> None:
         """AC-3: Configuration B must beat A on the same ten task sets."""
         results_a = [

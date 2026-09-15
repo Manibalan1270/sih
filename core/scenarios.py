@@ -188,6 +188,34 @@ BENCH3 = Scenario(
     requirements=("AC-2", "AC-3", "AC-5", "FR-10.1", "FR-10.4", "FR-10.7", "NFR-2.1"),
 )
 
+BENCH10 = Scenario(
+    name="bench10",
+    purpose=(
+        "The middle rung of the section 6.3 scalability ladder. The protocol "
+        "names three, ten and one hundred AMRs: three is the graded experiment "
+        "and one hundred proves the auction stays zone-local, but nothing sat "
+        "between them, so there was no evidence for how the result moves with "
+        "fleet size."
+    ),
+    robots=10,
+    # Not benchmark_map: a bay is a dead-end spur holding one robot, and that map
+    # has six, so ten AMRs would have to queue for one -- the aisle-blocking
+    # failure bays exist to prevent (tests/unit/test_maps.py::TestStagingBays).
+    # The ladder already changes map per rung, scale100 being on
+    # warehouse_zoned_100; this keeps that pattern and inherits the zoned map's
+    # ten single-lane chokes, which is what section 6.3 asks a benchmark map for.
+    map_name="warehouse_zoned_30",
+    engine=Engine.HEADLESS,
+    transport=TransportKind.INPROC,
+    zoned=True,
+    # AC-2 and AC-3 are graded on bench3 alone -- exactly one scenario produces
+    # the graded evidence (tests/test_architecture.py::TestScenarioIntegrity).
+    # This rung is scalability evidence, and reports through the same A/B runner.
+    benchmarked=False,
+    seeds=10,
+    requirements=("FR-10.4", "FR-10.7", "NFR-2.1"),
+)
+
 VISUAL30 = Scenario(
     name="visual30",
     purpose=(
@@ -237,7 +265,7 @@ HARDWARE2 = Scenario(
 )
 
 SCENARIOS: dict[str, Scenario] = {
-    s.name: s for s in (BENCH3, VISUAL30, SCALE100, HARDWARE2)
+    s.name: s for s in (BENCH3, BENCH10, VISUAL30, SCALE100, HARDWARE2)
 }
 
 
