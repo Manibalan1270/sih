@@ -22,6 +22,7 @@ from core.timewindows import (
     LANE,
     REGION,
     STATION,
+    Resource,
     ResourceModel,
     ResourceTable,
     RoutePlan,
@@ -63,9 +64,24 @@ def assert_no_waiting_inside(plan: RoutePlan, model: ResourceModel) -> None:
             assert step.exit_ms - step.enter_ms == model.lane_ms(step.resource.key), str(step)
 
 
+def _opening_hold(plan: RoutePlan) -> Resource | None:
+    """The resource a plan begins standing on, if any.
+
+    A plan's first step is the ground under the robot at the moment it committed --
+    the berth and spur of the station it is leaving, or the aisle already under its
+    wheels. The search cannot move it, so it is exempt from the check below: a robot
+    that is *there* may well overlap a booking a peer made before it arrived, and
+    what keeps the two apart is precedence at execution, not the timetable.
+    """
+    return plan.steps[0].resource if plan.steps else None
+
+
 def assert_disjoint_on_capacity_one(a: RoutePlan, b: RoutePlan, margin: int) -> None:
+    """No two windows on one capacity-one resource may overlap -- except where one
+    of the plans opens standing on it."""
+    standing = {_opening_hold(a), _opening_hold(b)}
     for sa in a.steps:
-        if not sa.resource.capacity_one:
+        if not sa.resource.capacity_one or sa.resource in standing:
             continue
         for sb in b.steps:
             if sb.resource != sa.resource:

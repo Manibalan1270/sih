@@ -54,6 +54,8 @@ def map_payload(sim: Simulation) -> dict[str, Any]:
             "v": edge.v,
             "length": edge.length_mm,
             "single_lane": edge.single_lane,
+            "one_way": not edge.bidirectional,
+            "single_file": graph.is_single_file(edge.id),
             "choke": edge.id == raw.get("choke_edge"),
         }
         for edge in graph.edges.values()
@@ -80,6 +82,35 @@ def _heading_deg(robot: Robot) -> int:
     return int(math.degrees(math.atan2(there.y_mm - here.y_mm, there.x_mm - here.x_mm))) % 360
 
 
+def _eta_ms(robot: Robot) -> int | None:
+    """Time left on the current route at nominal speed, or None if it has none.
+
+    Priced with ``nominal_cost_ms`` -- the same number the auction bid with -- so a
+    robot's ETA and the bid that won it the task tell one story. Yields, precedence
+    holds and recharges push the real arrival later, which is why the view labels
+    this nominal rather than promised.
+    """
+    route = robot.remaining_route
+    if len(route) < 2:
+        return None
+    graph = robot.graph
+    total = 0
+    if robot.edge_id is not None:
+        # Part-way along route[0] -> route[1]: charge only the part still to run.
+        length = max(1, graph.length_mm(robot.edge_id))
+        left = max(0, length - robot.progress_mm)
+        total += graph.nominal_cost_ms(robot.edge_id) * left // length
+        pairs = zip(route[1:], route[2:])
+    else:
+        pairs = zip(route, route[1:])
+    for u, v in pairs:
+        edge_id = graph.edge_between(u, v)
+        if edge_id is None:
+            return None  # An edge went away under the route; a replan is due.
+        total += graph.nominal_cost_ms(edge_id)
+    return total
+
+
 def robot_payload(robot: Robot) -> dict[str, Any]:
     x, y = robot.position_mm()
     task = robot.task
@@ -97,6 +128,7 @@ def robot_payload(robot: Robot) -> dict[str, Any]:
         "next": robot.next_node,
         "edge": robot.edge_id,
         "route": list(robot.remaining_route),
+        "eta_ms": _eta_ms(robot),
         "queue": len(robot.queue),
         "wait": (
             {"kind": wait.kind, "blocker": wait.blocker_id, "resource": wait.resource}

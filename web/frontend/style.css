@@ -7,7 +7,9 @@
  */
 
 :root {
-  /* Sheet: cool graphite ink, not black. */
+  /* Sheet: cool graphite ink, not black. This is the night print -- the
+   * default. The day print (below, [data-theme="light"]) is the same
+   * drafting-table scale run on paper instead of film. */
   --ink-900: #0b1219;
   --ink-850: #0e1720;
   --ink-800: #111c26;
@@ -20,6 +22,12 @@
   --graphite: #7d90a2;
   --chalk: #e9eff4;
   --paper: #f4f8fa;
+
+  /* Text and strokes drawn on top of a fleet colour, never on the sheet
+   * itself -- fixed so a pill or a robot's ID stays legible in both prints. */
+  --accent-ink: #0b1219;
+  /* RGB triplet (no rgba()) so translucent HUD chips can flip with the theme. */
+  --overlay-rgb: 11, 18, 25;
 
   /* The fleet's vocabulary. Nothing else may use these. */
   --beacon: #ffb340;      /* moving */
@@ -38,6 +46,28 @@
   --s5: 24px; --s6: 32px; --s7: 48px;
 
   --rail-w: 208px;
+}
+
+/* Day print: the same instrument on drafting paper. Every chrome surface is
+ * one of the --ink-* / --rule / --graphite / --chalk tokens above, and the
+ * floor plan is built entirely from them too, so retuning this one block
+ * reskins the whole app -- nav, cards, tables and the SVG floor alike. */
+:root[data-theme="light"] {
+  --ink-900: #eef2f4;
+  --ink-850: #e5ebee;
+  --ink-800: #dbe3e8;
+  --ink-700: #cad5da;
+  --ink-600: #b6c5cc;
+  --ink-500: #90a3ac;
+  --rule: #b9c7cd;
+  --rule-soft: #d6dfe3;
+
+  --graphite: #51626c;
+  --chalk: #16232b;
+  --paper: #060d12;
+
+  --accent-ink: #0b1219;
+  --overlay-rgb: 238, 242, 244;
 }
 
 * { box-sizing: border-box; }
@@ -116,6 +146,23 @@ a:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; border-r
   color: var(--graphite);
   text-transform: uppercase;
 }
+
+.theme-toggle {
+  margin-left: auto;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--graphite);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.theme-toggle:hover { border-color: var(--ink-500); color: var(--chalk); background: var(--ink-700); }
+.theme-toggle:focus-visible { outline: 2px solid var(--chalk); outline-offset: 1px; }
 
 .lamp {
   width: 8px; height: 8px;
@@ -270,7 +317,7 @@ a:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; border-r
   display: flex;
   border-top: 1px solid var(--rule);
   border-right: 1px solid var(--rule);
-  background: rgba(11, 18, 25, 0.9);
+  background: rgba(var(--overlay-rgb), 0.9);
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.04em;
@@ -367,11 +414,11 @@ tbody tr:last-child td { border-bottom: 0; }
   letter-spacing: 0.06em;
   text-align: center;
 }
-.pill.MOVING, .pill.HELD { background: var(--beacon); color: var(--ink-900); }
-.pill.YIELD, .pill.REPLAN { background: var(--hold); color: var(--ink-900); }
-.pill.CHARGING, .pill.COMPLETED { background: var(--verify); color: var(--ink-900); }
-.pill.FAULT { background: var(--alarm); }
-.pill.AT_DROP { background: var(--claim); color: var(--ink-900); }
+.pill.MOVING, .pill.HELD { background: var(--beacon); color: var(--accent-ink); }
+.pill.YIELD, .pill.REPLAN { background: var(--hold); color: var(--accent-ink); }
+.pill.CHARGING, .pill.COMPLETED { background: var(--verify); color: var(--accent-ink); }
+.pill.FAULT { background: var(--alarm); color: var(--accent-ink); }
+.pill.AT_DROP { background: var(--claim); color: var(--accent-ink); }
 .pill.PENDING { background: var(--ink-500); }
 .pill.SCHEDULED { background: var(--ink-600); color: var(--graphite); }
 
@@ -392,7 +439,7 @@ tbody tr:last-child td { border-bottom: 0; }
 
 /* ---- floor plan (shared by the mini and the full view) ------------------ */
 
-.zone { fill: var(--ink-800); stroke: var(--ink-850); stroke-width: 200; }
+.zone { fill: var(--ink-800); stroke: var(--rule-soft); stroke-width: 200; }
 .zone:nth-child(even) { fill: var(--ink-700); }
 
 .lane { stroke: var(--ink-700); stroke-linecap: butt; fill: none; }
@@ -400,20 +447,23 @@ tbody tr:last-child td { border-bottom: 0; }
 .lane.choke { stroke: var(--ink-500); }
 .lane-centre { stroke: var(--rule); stroke-width: 40; stroke-dasharray: 500 400; fill: none; }
 .lane-hazard { stroke: url(#hatch); stroke-width: 120; fill: none; opacity: 0.5; }
+.lane-arrow { stroke: var(--rule); stroke-width: 90; fill: none; opacity: 0.55;
+  stroke-linecap: round; stroke-linejoin: round; }
 
-.node { fill: var(--rule); }
-.node.junction { fill: var(--ink-500); }
+.node { fill: var(--rule); opacity: 0.55; }
+.node.junction { fill: var(--ink-500); opacity: 1; }
 .node.marker { stroke: var(--graphite); stroke-width: 40; fill: none; opacity: 0.3; }
 
-.station { stroke-width: 60; fill: none; stroke: var(--ink-500); }
-.station.pickup { fill: var(--pickup); stroke: var(--pickup); fill-opacity: 0.22; }
-.station.drop { fill: var(--drop); stroke: var(--drop); fill-opacity: 0.22; }
+.station { stroke-width: 80; fill: none; stroke: var(--ink-500); }
+.station.pickup { fill: var(--pickup); stroke: var(--pickup); fill-opacity: 0.28; }
+.station.drop { fill: var(--drop); stroke: var(--drop); fill-opacity: 0.28; }
 .station.parking { fill: none; stroke: var(--rule); }
 .charger-mark { fill: var(--verify); opacity: 0.8; }
 .station-label {
   font-family: var(--font-mono);
-  font-size: 620px;
-  fill: var(--graphite);
+  font-weight: 600;
+  font-size: 760px;
+  fill: var(--chalk);
   text-anchor: middle;
 }
 
@@ -433,12 +483,13 @@ tbody tr:last-child td { border-bottom: 0; }
 .robot .battery-track { fill: none; stroke: var(--ink-900); stroke-width: 90; opacity: 0.55; }
 .robot .battery { fill: none; stroke: var(--verify); stroke-width: 90; stroke-linecap: butt; }
 .robot.low .battery { stroke: var(--alarm); }
-.robot .cargo { fill: var(--ink-900); opacity: 0; }
+.robot .cargo { fill: var(--accent-ink); opacity: 0; }
 .robot.carrying .cargo { opacity: 0.55; }
 .robot .label {
   font-family: var(--font-mono);
-  font-size: 520px;
-  fill: var(--ink-900);
+  font-weight: 600;
+  font-size: 560px;
+  fill: var(--accent-ink);
   text-anchor: middle;
   dominant-baseline: central;
   pointer-events: none;
@@ -470,7 +521,7 @@ tbody tr:last-child td { border-bottom: 0; }
   padding: 5px 10px;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: rgba(11, 18, 25, 0.82);
+  background: rgba(var(--overlay-rgb), 0.82);
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--graphite);
@@ -514,7 +565,7 @@ tbody tr:last-child td { border-bottom: 0; }
   padding: 7px 11px;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: rgba(11, 18, 25, 0.82);
+  background: rgba(var(--overlay-rgb), 0.82);
   font-size: 10.5px;
   color: var(--graphite);
 }
@@ -528,6 +579,129 @@ tbody tr:last-child td { border-bottom: 0; }
 .sw-pickup { background: var(--pickup); border-radius: 1px; }
 .sw-drop { background: var(--drop); border-radius: 1px; }
 
+/* ---- AMR inspector ------------------------------------------------------
+ *
+ * A card that rides with the robot it describes. Same overlay treatment as the
+ * HUD chips and the legend so it reads as an instrument laid over the print,
+ * never as a second page. */
+
+.inspector {
+  position: absolute;
+  left: 0; top: 0;
+  z-index: 3;
+  width: 268px;
+  padding: var(--s3) var(--s3) var(--s2);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: rgba(var(--overlay-rgb), 0.94);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.inspector[hidden] { display: none; }
+
+.inspector-head { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
+.inspector-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--graphite);
+}
+.inspector-name strong { color: var(--chalk); font-weight: 600; }
+.inspector-close {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--graphite);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.inspector-close:hover { color: var(--chalk); }
+
+.inspector-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s3);
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--rule);
+}
+.inspector-label {
+  margin: 0;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+.inspector-figure {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--chalk);
+}
+.inspector-figure.low { color: var(--alarm); }
+.inspector-sub {
+  margin: 1px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--graphite);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bat-track.wide { width: 100%; height: 6px; margin-top: 6px; }
+
+.inspector-rows { margin: var(--s3) 0 0; padding: 0; }
+.inspector-rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: 2px 0;
+}
+.inspector-rows > div[hidden] { display: none; }
+.inspector-rows dt { font-size: 10.5px; color: var(--graphite); }
+.inspector-rows dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--chalk);
+  text-align: right;
+}
+.inspector-rows dd.wait { color: var(--hold); }
+
+.inspector-rows + .inspector-label { margin-top: var(--s3); }
+.inspector-hops { margin-left: 4px; color: var(--graphite); letter-spacing: 0.04em; }
+
+.inspector-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 92px;
+  overflow-y: auto;
+  list-style: none;
+}
+.inspector-path li {
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: var(--ink-700);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--graphite);
+}
+.inspector-path li.here { background: var(--beacon); color: var(--accent-ink); }
+.inspector-path li.goal { background: var(--ink-600); color: var(--chalk); }
+.inspector-path li.goal.pickup-goal { background: var(--pickup); color: var(--accent-ink); }
+.inspector-path li.goal.drop-goal { background: var(--drop); color: var(--accent-ink); }
+
+.inspector-foot {
+  margin: var(--s2) 0 0;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--graphite);
+}
+
 /* ---- announce ----------------------------------------------------------- */
 
 .announce-layout { display: grid; grid-template-columns: 1fr 380px; gap: var(--s4); align-items: start; }
@@ -540,7 +714,7 @@ tbody tr:last-child td { border-bottom: 0; }
   padding: 6px 10px;
   border: 1px solid var(--rule);
   border-radius: 3px;
-  background: rgba(11, 18, 25, 0.86);
+  background: rgba(var(--overlay-rgb), 0.86);
   font-size: 11.5px;
   color: var(--graphite);
   pointer-events: none;
@@ -615,4 +789,61 @@ tbody tr:last-child td { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   .lamp[data-state="live"] { animation: none; }
   .meter span { transition: none; }
+}
+
+/* ---- benchmark: stop-and-wait against ROBOTON ---------------------------- */
+
+.bench-intro {
+  margin: 0 0 var(--s4);
+  max-width: 72ch;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--graphite);
+}
+#bench-form { margin-bottom: var(--s4); }
+.bench-progress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--graphite);
+  align-self: flex-end;
+  padding-bottom: 7px;
+}
+.bench-progress.alarm { color: var(--alarm); }
+
+.bench-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  padding-bottom: var(--s3);
+  margin-bottom: var(--s3);
+  border-bottom: 1px solid var(--rule);
+}
+.bench-figure {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--verify);
+}
+.bench-figure-sub { font-size: 12px; color: var(--graphite); }
+
+#bench-table td { white-space: normal; }
+#bench-table .bench-measure { color: var(--graphite); font-family: var(--font-body); }
+#bench-table .bench-good { color: var(--verify); }
+#bench-table .bench-bad { color: var(--beacon); }
+/* A difference that cannot be read as better or worse, because the baseline it
+   is measured against was not achievable. */
+#bench-table .bench-void { color: var(--graphite); }
+
+.bench-note {
+  margin: var(--s4) 0 0;
+  max-width: 78ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--graphite);
+}
+.bench-note.caveat {
+  border-left: 2px solid var(--beacon);
+  padding-left: var(--s3);
 }

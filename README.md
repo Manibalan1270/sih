@@ -26,10 +26,23 @@ py scripts/check_yield_at_density.py --seeds 1        # is the raised yield spee
 Two views of one run, both spectators of the same headless engine:
 
 - **Fleet dashboard** (`py -m web.backend.app`, then <http://127.0.0.1:8000>): pick a
-  scenario, seed and speed, press *Start run*. The floor plan shows every robot's
-  position, heading, state and battery ring, the task it holds, and a dashed link to
-  the peer it is holding for. Read-only by construction (FR-8.4): the backend owns no
+  scenario, seed, speed and **algorithm**, press *Start run*. The floor plan shows every
+  robot's position, heading, state and battery ring, the task it holds, and a dashed link
+  to the peer it is holding for. Read-only by construction (FR-8.4): the backend owns no
   transport, which `tests/test_architecture.py` enforces.
+- **Benchmark panel** (bottom of the overview): runs the section 6.3 A/B protocol --
+  Configuration A stop-and-wait against Configuration B ROBOTON -- over N seeds and shows
+  both columns side by side. Same scenario, same seeds, therefore the same task sets;
+  `compare_configurations` refuses the comparison otherwise, so what differs between the
+  columns is the coordination and nothing else. Run Control offers the same two
+  algorithms, so the difference can be watched on the floor as well as read off the table.
+
+  The panel does not print a speed-up, because two things can make the two times
+  incomparable and both of them happen here. A configuration that **collides** finishes in
+  a time it could only reach by driving through its own fleet (robots overlap and carry on
+  in this simulator). A configuration that **jams** reports the last completion it managed,
+  which gets *smaller* the longer it is stuck. Where either holds, the makespan row reads
+  *not comparable* and the note says why.
 - **Order entry** (<http://127.0.0.1:8000/orders>): post work into a running fleet.
   Click a station to set *collect*, another to set *deliver*, give it a priority, and
   the gateway announces it. From that moment it is an ordinary task -- the auction
@@ -274,9 +287,28 @@ Last updated 2026-09-15.
 
 Acceptance criteria as they stand: **AC-1** largely met (70 traced TCs); **AC-2** zero collisions
 across the 30-seed `bench3` gate; **AC-4** gateway-pause behavior verified; **AC-5** met;
-**AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open,
-and further off than previously measured**: with `YIELD_SPEED_MM_S` held at its safe, tested
-value, B is *slower* than A at `1.21x` (requirement is `<=0.8x`) -- see the note under Step 6.
+**AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open**:
+with `YIELD_SPEED_MM_S` held at its safe, tested value, B is *slower* than A on `bench3` at
+`1.09x` at 3 AMRs and `1.36x` at 6 (requirement is `<=0.8x`). That is better than the `1.21x`
+previously recorded, but still the wrong side of the bar.
+
+Two things are worth saying about that number before it is read as a verdict on coordination.
+
+**A's times are not achievable.** Across ten `bench3` seeds at 6 AMRs, A logs **162
+collisions** and B logs **0**. A is quicker in the way that running red lights is quicker.
+
+**The comparison inverts at fleet density, which is where the claim was always aimed.** On
+`visual30` with 30 AMRs on the zoned floor, one seed:
+
+| | tasks | collisions | makespan | fleet time held |
+|---|---|---|---|---|
+| A stop-and-wait | 118/120, **did not finish** | 47 | -- (hit the 30-min cap) | 31,857 s |
+| B ROBOTON | **120/120** | **0** | 1,350 s | 7,585 s |
+
+Stop-and-wait does not get slower at density so much as it stops working: it spends 4.2x
+longer stopped and never clears the task set. Where B's extra time on the small map goes is
+measurable too -- 65% of it is *precedence* waits, robots taking their turn at a junction or
+a station, which is the mechanism doing its job rather than overhead around it.
 
 ### Left to do, in order
 
@@ -372,10 +404,19 @@ Two entries in "Known SRS defects" are stale and should be read with this note u
 
 ### How the coordination works now (read before touching it)
 
+Every aisle on every map is a **single lane**: one file of traffic, no aisle wide enough
+for two AMRs abreast. Most are one-way, laid out as dual carriageways -- each leg of the
+floor is a pair of single-lane aisles running opposite ways on their own ground -- so
+neither direction waits for the other and a head-on is impossible by construction. The
+exception is the benchmark map's choke, which is two-way and capacity one: that is the
+contention the graded experiment exists to measure. Station spurs are two-way as well,
+because a dead end has to be left the way it was entered, and hold one robot at a time.
+
 A robot books its **whole route** as time windows on resources -- junction *regions*
 (node plus `JUNCTION_FOOTPRINT_MM` into every arm, capacity one, never a place to wait),
-*lanes* (one per direction of a two-lane edge, FIFO, waiting only at the end), single-lane
-*corridors* (capacity one, atomic) and *stations* (leaves) -- against every plan it has heard
+*lanes* (one per direction of an edge, FIFO, waiting only at the end), single-lane
+*corridors* (capacity one, either direction, atomic) and *stations* (a leaf **and its
+spur**, capacity one) -- against every plan it has heard
 (PATH, repeated every `PATH_REPEAT_MS`). It then drives by **order, never time**: it enters a
 resource only after every robot booked ahead of it there has released it, which that robot's
 INTENT `plan_index` says. Two plans committed before either heard the other are settled by
@@ -392,7 +433,18 @@ each of which was a measured collision or deadlock on the way here:
   lane order after assembly and retries with a floor on the offending lane.
 - A late robot re-books after `REPLAN_SLACK_MS`, but only prefix steps count as entered at
   adoption -- counting them every tick made the corridor beyond a junction read as entered.
-- A resting robot's bay booking keeps its original start across refreshes.
+- A resting robot's bay booking keeps its original start across refreshes -- but no
+  booking may reach further back than `PLAN_BACKDATE_LIMIT_MS`, because PATH carries times
+  as signed tick offsets and a hold older than +-655 s saturates at the encoder, so peers
+  rebuild it as starting *later* than it did and precedence inverts.
+- A station is one resource for the whole spur, whichever way it is being driven, and is
+  released only when the robot is off the spur. While the spur was a station inbound and a
+  plain lane outbound, two robots each held what they thought was an empty spur.
+- A robot standing on a resource outranks commit order for it: it cannot replan its way off
+  ground it is on, so the peer that merely booked the resource is the one that gives way.
+- A robot blocked by precedence checks whether its blocker is waiting on something *it* has
+  booked ahead of that blocker; that two-resource cycle is invisible to a total order on one
+  resource, and it is what deadlocked a depot spur against the junction at its mouth.
 - Geometry: the hold line sits outside the region behind as well (`Robot._hold_line_mm`);
   `HOLD_LINE_MM` is 300 because the footprint is lane offset plus collision distance with no
   margin; the modelled sensor ignores the oncoming lane of the same edge.

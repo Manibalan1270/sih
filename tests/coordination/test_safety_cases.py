@@ -35,6 +35,7 @@ from core.planner_timewindow import Start, TimeWindowPlanner
 from core.state_machine import State
 from core.timewindows import (
     REGION,
+    STATION,
     ResourceModel,
     ResourceTable,
     RoutePlan,
@@ -129,9 +130,15 @@ class TestTC1CrossingJunction:
         clear_at = region_window(first, 0).exit_ms + config.MARGIN_MS + 100
         # Leaving late enough that the crossing is free: no wait is planned.
         second = plan_across(planner, table, robot_id=3, start=3, goal=4, at_ms=clear_at)
-        lane_in = second.steps[1]
-        assert lane_in.exit_ms == region_window(second, 0).enter_ms
-        assert lane_in.enter_ms == clear_at
+        # The stretch into the junction is the departure station's own step: berth
+        # and spur are one capacity-one resource, so a plan leaving a station opens
+        # with one step rather than a station and a lane. It is held from the
+        # departure right up to the moment the junction is entered -- no wait, the
+        # crossing being free.
+        spur_out = second.steps[0]
+        assert spur_out.resource.kind == STATION
+        assert spur_out.exit_ms == region_window(second, 0).enter_ms
+        assert spur_out.enter_ms == clear_at
 
     def test_a_race_gives_both_robots_opposite_answers(self) -> None:
         """Appendix C's Theorem in miniature: two plans committed in the same

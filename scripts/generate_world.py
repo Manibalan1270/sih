@@ -215,13 +215,16 @@ def build_world(scenario: scenarios.Scenario, *, seed: int, robots: int | None =
         u, v = graph.node(edge.u), graph.node(edge.v)
         full = math.hypot(v.x_mm - u.x_mm, v.y_mm - u.y_mm) * MM
         yaw = math.atan2(v.y_mm - u.y_mm, v.x_mm - u.x_mm)
-        width = SINGLE_LANE_WIDTH_M if edge.single_lane else LANE_WIDTH_M
+        single_file = graph.is_single_file(edge.id)
+        width = SINGLE_LANE_WIDTH_M if single_file else LANE_WIDTH_M
         colour = LANE_SINGLE if edge.single_lane else LANE
         length = max(0.2, full - LANE_WIDTH_M)
         mx, my = (u.x_mm + v.x_mm) / 2 * MM, (u.y_mm + v.y_mm) / 2 * MM
         parts.append(_box(mx, my, LANE_Z, length, width, LANE_THICK, colour, yaw=yaw, name=f"lane_{edge.id}"))
         if edge.single_lane or edge.id == choke:
-            # Hazard edging on a corridor only one robot may hold.
+            # Hazard edging on a two-way corridor only one robot may hold. A
+            # one-way aisle is single file too but carries no head-on risk, so it
+            # is drawn narrow without the hazard stripes.
             for side in (-1, 1):
                 ox = -math.sin(yaw) * side * (width / 2 + 0.06)
                 oy = math.cos(yaw) * side * (width / 2 + 0.06)

@@ -61,8 +61,8 @@
       if (!u || !v) continue;
       el("line", {
         x1: u.x, y1: u.y, x2: v.x, y2: v.y,
-        class: `lane${e.single_lane ? " single" : ""}`,
-        "stroke-width": e.single_lane ? 1400 : laneWidth,
+        class: `lane${(e.single_file ?? e.single_lane) ? " single" : ""}`,
+        "stroke-width": (e.single_file ?? e.single_lane) ? 1400 : laneWidth,
       }, layers.lanes);
     }
 
@@ -96,7 +96,7 @@
     for (const r of robots) {
       let dot = robotDots.get(r.id);
       if (!dot) {
-        dot = el("circle", { r: 460, class: "robot-dot" }, layers.robots);
+        dot = el("circle", { r: 480, class: "robot-dot" }, layers.robots);
         robotDots.set(r.id, dot);
       }
       dot.setAttribute("cx", r.x);

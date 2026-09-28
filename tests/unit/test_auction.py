@@ -23,6 +23,7 @@ from core.auction import (
 from core.graph import Graph
 from core.planner_astar import AStarPlanner
 from core.task import Leg, Task, TaskQueue
+from tests.conftest import sever_the_right_half
 
 
 def task(task_id: int = 1, *, pickup: int = 1, drop: int = 5, priority: int = 10,
@@ -157,8 +158,7 @@ class TestInsertionCost:
         assert bid.insert_at in (0, 1)
 
     def test_an_unroutable_task_produces_no_bid(self, benchmark_map: Graph) -> None:
-        for edge_id in (4, 7, 10):
-            benchmark_map.block(edge_id)
+        sever_the_right_half(benchmark_map)
         planner = AStarPlanner(benchmark_map)
         auctioneer = Auctioneer(robot_id=1)
         assert auctioneer.price(

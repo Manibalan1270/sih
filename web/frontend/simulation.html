@@ -6,8 +6,9 @@
 <title>ROBOTON — live floor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 </head>
 <body class="app">
 
@@ -24,6 +25,7 @@
   <div class="rail-foot">
     <span class="lamp" data-state="live"></span>
     <span class="rail-foot-label">spectator</span>
+    <button type="button" class="theme-toggle" id="theme-toggle"></button>
   </div>
 </nav>
 
@@ -54,8 +56,41 @@
 
       <div class="floor-hud">
         <span class="hud-chip">sim clock <strong id="clock">00:00.0</strong></span>
-        <span class="hud-chip">click an AMR to trace its route</span>
+        <span class="hud-chip">click an AMR for its route, ETA and charge</span>
       </div>
+
+      <!-- Follows the selected AMR across the floor; filled from the same frame
+           that moves it, so every number in it is this tick's. -->
+      <aside class="inspector" id="inspector" hidden>
+        <header class="inspector-head">
+          <span class="inspector-name">AMR <strong id="insp-id">—</strong></span>
+          <span class="pill" id="insp-state">—</span>
+          <button type="button" class="inspector-close" id="insp-close" aria-label="Close">&#10005;</button>
+        </header>
+
+        <div class="inspector-figures">
+          <div>
+            <p class="inspector-label">ETA</p>
+            <p class="inspector-figure" id="insp-eta">—</p>
+            <p class="inspector-sub" id="insp-goal">—</p>
+          </div>
+          <div>
+            <p class="inspector-label">Battery</p>
+            <p class="inspector-figure" id="insp-battery">—</p>
+            <div class="bat-track wide"><span class="bat-fill" id="insp-battery-bar"></span></div>
+          </div>
+        </div>
+
+        <dl class="inspector-rows">
+          <div><dt>Task</dt><dd id="insp-task">—</dd></div>
+          <div><dt>Distance left</dt><dd id="insp-distance">—</dd></div>
+          <div id="insp-wait-row" hidden><dt>Held by</dt><dd id="insp-wait">—</dd></div>
+        </dl>
+
+        <p class="inspector-label">Route <span class="inspector-hops" id="insp-hops"></span></p>
+        <ol class="inspector-path" id="insp-path"></ol>
+        <p class="inspector-foot">ETA at nominal speed. Yields and precedence holds add to it.</p>
+      </aside>
 
       <div id="empty" class="empty">
         <p class="empty-title">No run in progress</p>
@@ -91,44 +126,6 @@
           <div><div class="stat-value" id="c-stopped">0 s</div><div class="stat-label">Stopped</div></div>
           <div><div class="stat-value" id="c-makespan">—</div><div class="stat-label">Makespan</div></div>
         </div>
-      </div>
-
-      <div class="side-block">
-        <form id="run-form" class="stack" autocomplete="off">
-          <p class="card-label" style="margin:0">Run control</p>
-          <label class="field">
-            <span>Scenario</span>
-            <select id="scenario" name="scenario"></select>
-          </label>
-          <div class="form-row">
-            <label class="field">
-              <span>Seed</span>
-              <input id="seed" name="seed" type="number" min="0" value="1">
-            </label>
-            <label class="field">
-              <span>AMRs</span>
-              <input id="robots" name="robots" type="number" min="1" placeholder="default">
-            </label>
-            <label class="field">
-              <span>Tasks</span>
-              <input id="tasks" name="tasks" type="number" min="1" placeholder="default">
-            </label>
-          </div>
-          <div class="form-row">
-            <label class="field">
-              <span>Speed</span>
-              <select id="speed" name="speed">
-                <option value="1">1×</option>
-                <option value="2" selected>2×</option>
-                <option value="4">4×</option>
-                <option value="8">8×</option>
-                <option value="16">16×</option>
-              </select>
-            </label>
-            <button type="submit" id="start" class="btn primary">Start run</button>
-            <button type="button" id="pause" class="btn" disabled>Pause</button>
-          </div>
-        </form>
       </div>
 
       <div class="side-scroll">

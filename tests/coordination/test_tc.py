@@ -140,19 +140,27 @@ class TestTC10NobodyCanBid:
     until an AMR becomes eligible (FR-4.13, FR-4.9).
     """
 
-    def test_a_task_nobody_can_take_is_not_lost(self, sim) -> None:
-        for robot in sim.engine.robots:
-            robot.battery_pct = config.BATTERY_RESERVE_PCT - 1
-        for _ in range(400):
+    @staticmethod
+    def _hold_below_reserve(sim, ticks: int) -> None:
+        """Step the fleet with every AMR pinned under the battery reserve.
+
+        Pinned every tick, not once at the start: the AMRs begin on chargers, so a
+        single assignment lapses after twenty ticks and the test then measures a
+        fleet that *can* bid. It passed anyway only because three robots happened to
+        leave one of the three released tasks unclaimed.
+        """
+        for _ in range(ticks):
+            for robot in sim.engine.robots:
+                robot.battery_pct = config.BATTERY_RESERVE_PCT - 1
             sim.step()
+
+    def test_a_task_nobody_can_take_is_not_lost(self, sim) -> None:
+        self._hold_below_reserve(sim, 400)
         assert sim.pending, "a task nobody could take was dropped"
         assert len(sim.completed) == 0
 
     def test_it_completes_once_a_robot_becomes_eligible(self, sim) -> None:
-        for robot in sim.engine.robots:
-            robot.battery_pct = config.BATTERY_RESERVE_PCT - 1
-        for _ in range(400):
-            sim.step()
+        self._hold_below_reserve(sim, 400)
         for robot in sim.engine.robots:
             robot.battery_pct = 100
         assert sim.run(max_ms=1_800_000)

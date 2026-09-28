@@ -87,6 +87,22 @@ def plot(
     )
 
     # Edges first, so nodes and the route overlay sit on top of them.
+    def _arrow_head(canvas, ax, ay, bx, by) -> None:
+        """A chevron two thirds of the way along, pointing the way traffic runs."""
+        import math
+
+        dx, dy = bx - ax, by - ay
+        length = math.hypot(dx, dy)
+        if length < 0.5:
+            return
+        ux, uy = dx / length, dy / length
+        tipx, tipy = ax + ux * length * 0.66, ay + uy * length * 0.66
+        size = 0.6
+        for side in (-1, 1):
+            backx = tipx - ux * size + -uy * side * size * 0.6
+            backy = tipy - uy * size + ux * side * size * 0.6
+            canvas.line(backx, backy, tipx, tipy, colour="#AAAAAA", width=1.3)
+
     for edge in graph.edges.values():
         a, b = graph.node(edge.u), graph.node(edge.v)
         ax, ay = a.x_mm / 1000, a.y_mm / 1000
@@ -95,6 +111,11 @@ def plot(
             canvas.line(ax, ay, bx, by, colour=CHOKE_COLOUR, width=7)
         elif edge.single_lane:
             canvas.line(ax, ay, bx, by, colour=CHOKE_COLOUR, width=2.4, dash="7 4")
+        elif not edge.bidirectional:
+            # A one-way aisle, drawn from u to v with a head so the direction --
+            # the map's most consequential property now -- is on the drawing.
+            canvas.line(ax, ay, bx, by, colour="#AAAAAA", width=1.3)
+            _arrow_head(canvas, ax, ay, bx, by)
         else:
             canvas.line(ax, ay, bx, by, colour="#AAAAAA", width=1.3)
 
@@ -129,7 +150,8 @@ def plot(
     canvas.text(
         canvas.width / 2, 52,
         f"{len(graph.nodes)} nodes  |  {len(graph.edges)} edges  |  "
-        f"{len(graph.single_lane_edges)} single-lane  |  {zones.zone_count} zones",
+        f"{len(graph.single_lane_edges)} corridors  |  "
+        f"{len(graph.one_way_edges)} one-way  |  {zones.zone_count} zones",
         size=12, colour="#666666", anchor="middle", data_space=False,
     )
     canvas.text(

@@ -229,9 +229,9 @@ class Engine:
 
         Two things count as ahead: a robot further along the same edge in the same
         direction, and a robot sitting at the node this robot is heading for.
-        Opposing traffic on a bidirectional aisle is in the other lane and is not an
-        obstacle; on a single-lane corridor it is, and corridor arbitration is what
-        stops them meeting there.
+        Opposing traffic on a two-lane aisle is in the other lane and is not an
+        obstacle; on a single-file aisle it is -- and on a one-way aisle it cannot
+        arise at all, which is the point of making the maps one-way.
         """
         occupants: dict[tuple[int, int], list[Robot]] = {}
         # node -> [(robot, departing)]. ``departing`` distinguishes a robot on its way
@@ -308,11 +308,13 @@ class Engine:
                 # edge this one is arriving on, in the other direction, is beside it,
                 # not in front of it -- a forward sensor does not see it, and treating
                 # it as an obstacle held robots inside the region behind them until
-                # three of them waited in a ring. Single-lane edges have no other lane.
+                # three of them waited in a ring. A single-file aisle has no other
+                # lane to be beside it in: on a corridor, a one-way aisle or a
+                # station spur, anything on that stretch is genuinely in the way.
                 if (
                     other.edge_id == robot.edge_id
                     and other.next_node != robot.next_node
-                    and not robot.graph.edge(robot.edge_id).single_lane
+                    and not robot.graph.is_single_file(robot.edge_id)
                 ):
                     continue
                 if to_node < nearest:
@@ -345,8 +347,9 @@ class Engine:
         """Physical positions of every robot present in the world."""
         result = []
         for robot in self.active_robots:
-            # Lane-adjusted, because two robots passing on a bidirectional aisle are
-            # not in contact -- see Robot.footprint_mm.
+            # Lane-adjusted, because two robots passing on a two-lane aisle are
+            # not in contact -- see Robot.footprint_mm. On the single-file maps this
+            # is the centre line and the check is the true nose-to-tail one.
             x, y = robot.footprint_mm()
             result.append(
                 Pose(

@@ -369,12 +369,22 @@ PATH_FIXED = "<BIBhB"
 PATH_TICK_MS = config.MOTION_TICK_MS
 PATH_OFFSET_MIN, PATH_OFFSET_MAX = -(2**15), 2**15 - 1
 
+assert config.PLAN_BACKDATE_LIMIT_MS < -PATH_OFFSET_MIN * PATH_TICK_MS, (
+    "a plan may reach further back than PATH can encode; the clamp below would "
+    "saturate and a peer would rebuild the hold as starting later than it did"
+)
+
 
 def max_path_nodes(id_bits: int) -> int:
     """How many nodes one PATH frame holds at this id width."""
     per_entry = struct.calcsize("<Bh" if id_bits == 8 else "<Hh")
     room = config.MAX_FRAME_BYTES - HEADER_SIZE - struct.calcsize(PATH_FIXED) - CRC_SIZE
     return room // per_entry
+
+
+assert config.MAX_PLAN_NODES <= max_path_nodes(16), (
+    "a plan may name more nodes than a PATH frame can carry at 16-bit ids"
+)
 """Entries per DIGEST slice. Sized so the frame stays inside CON-2's 250 bytes at
 16-bit ids: 24 * 5 + 10 = 130 bytes, leaving room for the ESP-NOW header the
 simulation does not model."""

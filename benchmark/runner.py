@@ -22,6 +22,16 @@ from simulator.scenario import AuctionAllocator, RoundRobinAllocator, build
 class SeedResult:
     seed: int
     config_name: str
+    robots: int
+    finished: bool
+    """Whether the run completed its task set inside the time limit.
+
+    Carried rather than raised on, because a configuration that cannot finish is
+    the most informative result the comparison can produce -- a baseline that
+    jams is exactly what the coordinated one is being measured against. The CLI
+    and the AC-3 evidence still refuse an unfinished run (``allow_unfinished``);
+    the dashboard shows it."""
+
     tasks_total: int
     tasks_completed: int
     makespan_ms: int
@@ -43,16 +53,27 @@ def _task_count_for(scenario, seed: int) -> int:
     return 4 * scenario.simulated_robots
 
 
-def run_seed(scenario, *, seed: int, config_name: str, allocator) -> SeedResult:
+def run_seed(
+    scenario,
+    *,
+    seed: int,
+    config_name: str,
+    allocator,
+    robots: int | None = None,
+    max_ms: int = 1_800_000,
+    allow_unfinished: bool = False,
+) -> SeedResult:
+    fleet = robots if robots is not None else scenario.simulated_robots
     sim = build(
         scenario,
         seed=seed,
         allocator=allocator,
-        task_count=_task_count_for(scenario, seed),
+        robots=robots,
+        task_count=4 * fleet,
         waves=4,
     )
-    finished = sim.run(max_ms=1_800_000)
-    if not finished:
+    finished = sim.run(max_ms=max_ms)
+    if not finished and not allow_unfinished:
         raise RuntimeError(f"benchmark run did not complete for {config_name} seed {seed}")
 
     stopped = sum(r.metrics.stopped_ms for r in sim.engine.robots)
@@ -62,6 +83,8 @@ def run_seed(scenario, *, seed: int, config_name: str, allocator) -> SeedResult:
     return SeedResult(
         seed=seed,
         config_name=config_name,
+        robots=fleet,
+        finished=finished,
         tasks_total=len(sim.task_set),
         tasks_completed=len(sim.completed),
         makespan_ms=sim.makespan_ms,
@@ -92,6 +115,9 @@ def compare_configurations(results_a: list[SeedResult], results_b: list[SeedResu
 
     makespan_a = [r.makespan_ms for r in results_a]
     makespan_b = [r.makespan_ms for r in results_b]
+    done_a = sum(r.tasks_completed for r in results_a)
+    done_b = sum(r.tasks_completed for r in results_b)
+    total = sum(r.tasks_total for r in results_a)
 
     return {
         "makespan_mean_a": statistics.mean(makespan_a),
@@ -113,6 +139,12 @@ def compare_configurations(results_a: list[SeedResult], results_b: list[SeedResu
         "path_frames_seen_mean_b": statistics.mean(
             r.path_frames_seen for r in results_b
         ),
+        "tasks_total": total,
+        "tasks_done_a": done_a,
+        "tasks_done_b": done_b,
+        "runs_finished_a": sum(r.finished for r in results_a),
+        "runs_finished_b": sum(r.finished for r in results_b),
+        "robots": results_b[0].robots,
     }
 
 

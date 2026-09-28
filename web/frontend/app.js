@@ -14,6 +14,23 @@
   };
   const svg = $("map");
   const tbody = document.querySelector("#fleet-table tbody");
+  const floor = document.querySelector(".floor");
+  const insp = {
+    card: $("inspector"),
+    close: $("insp-close"),
+    id: $("insp-id"),
+    state: $("insp-state"),
+    eta: $("insp-eta"),
+    goal: $("insp-goal"),
+    battery: $("insp-battery"),
+    batteryBar: $("insp-battery-bar"),
+    task: $("insp-task"),
+    distance: $("insp-distance"),
+    waitRow: $("insp-wait-row"),
+    wait: $("insp-wait"),
+    hops: $("insp-hops"),
+    path: $("insp-path"),
+  };
 
   let map = null;               // geometry as sent by /api/map
   let nodesById = new Map();
@@ -21,8 +38,8 @@
   let robotEls = new Map();     // robot id -> { g, body, heading, battery, label, row }
   let selected = null;          // robot id whose route is drawn
   let lastHeading = new Map();
-  let running = false;
-  let paused = false;
+  let lastRobots = [];          // the frame on screen, so a click can redraw
+  let lastPathKey = "";         // rebuild the inspector's hop list only on change
 
   // ---- helpers ------------------------------------------------------------
 
@@ -37,6 +54,34 @@
     while (node.firstChild) node.removeChild(node.firstChild);
   }
 
+  // A one-way aisle is drawn with chevrons along it, spaced so a long aisle gets
+  // several and a short spur-length one still gets its single arrow. Which way an
+  // aisle runs is the map's most consequential property now, so it is on the
+  // drawing rather than in a legend.
+  function drawChevrons(u, v, parent) {
+    const dx = v.x - u.x, dy = v.y - u.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    const ux = dx / len, uy = dy / len;
+    const nx = -uy, ny = ux;
+    const spacing = 3000, size = 420;
+    const count = Math.max(1, Math.round(len / spacing));
+    for (let i = 1; i <= count; i += 1) {
+      const t = (len * i) / (count + 1);
+      const cx = u.x + ux * t, cy = u.y + uy * t;
+      const tipX = cx + ux * size, tipY = cy + uy * size;
+      const backX = cx - ux * size * 0.4, backY = cy - uy * size * 0.4;
+      el("polyline", {
+        class: "lane-arrow",
+        points: [
+          `${backX + nx * size},${backY + ny * size}`,
+          `${tipX},${tipY}`,
+          `${backX - nx * size},${backY - ny * size}`,
+        ].join(" "),
+      }, parent);
+    }
+  }
+
   function fmtClock(ms) {
     const s = ms / 1000;
     const m = Math.floor(s / 60);
@@ -46,6 +91,21 @@
 
   function fmtSeconds(ms) {
     return `${Math.round(ms / 1000)} s`;
+  }
+
+  function fmtEta(ms) {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) return `${s} s`;
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  function fmtMetres(mm) {
+    return mm >= 10000 ? `${(mm / 1000).toFixed(0)} m` : `${(mm / 1000).toFixed(1)} m`;
+  }
+
+  function nodeLabel(id) {
+    const n = nodesById.get(id);
+    return n && n.name ? n.name : `#${id}`;
   }
 
   // ---- floor plan ---------------------------------------------------------
@@ -58,6 +118,9 @@
     robotEls = new Map();
     clear(tbody);
     selected = null;
+    insp.card.hidden = true;
+    lastRobots = [];
+    lastPathKey = "";
 
     const xs = data.nodes.map((n) => n.x);
     const ys = data.nodes.map((n) => n.y);
@@ -87,16 +150,22 @@
       }
     }
 
-    // Lanes: a band of concrete, a dashed centre line for two-lane aisles,
-    // hazard hatching along a single-lane corridor.
+    // Lanes: a band of concrete. Every aisle on these maps is a single lane, and
+    // the drawing says which kind -- hazard hatching along a two-way corridor,
+    // where robots meet one at a time, and a chevron along a one-way aisle showing
+    // which way it runs. A two-lane aisle, if a map ever has one again, keeps its
+    // dashed centre line.
     for (const e of data.edges) {
       const u = nodesById.get(e.u), v = nodesById.get(e.v);
       const attrs = { x1: u.x, y1: u.y, x2: v.x, y2: v.y };
-      const cls = ["lane", e.single_lane ? "single" : "", e.choke ? "choke" : ""].join(" ").trim();
-      el("line", { ...attrs, class: cls, "stroke-width": e.single_lane ? singleWidth : laneWidth }, layers.lanes);
+      const single = e.single_file ?? e.single_lane;
+      const cls = ["lane", single ? "single" : "", e.choke ? "choke" : ""].join(" ").trim();
+      el("line", { ...attrs, class: cls, "stroke-width": single ? singleWidth : laneWidth }, layers.lanes);
       if (e.single_lane) {
         el("line", { ...attrs, class: "lane-hazard" }, layers.lanes);
-      } else {
+      } else if (e.one_way) {
+        drawChevrons(u, v, layers.lanes);
+      } else if (!single) {
         el("line", { ...attrs, class: "lane-centre" }, layers.lanes);
       }
     }
@@ -128,8 +197,8 @@
 
   // ---- robots -------------------------------------------------------------
 
-  const BODY_R = 450;
-  const RING_R = 640;
+  const BODY_R = 470;
+  const RING_R = 660;
   const RING_LEN = 2 * Math.PI * RING_R;
 
   function makeRobot(r) {
@@ -140,11 +209,14 @@
       transform: "rotate(-90)",
     }, g);
     const body = el("circle", { class: "body", r: BODY_R }, g);
-    const cargo = el("rect", { class: "cargo", x: -170, y: -170, width: 340, height: 340 }, g);
-    const heading = el("line", { class: "heading", x1: 0, y1: 0, x2: BODY_R + 250, y2: 0 }, g);
+    const cargo = el("rect", { class: "cargo", x: -180, y: -180, width: 360, height: 360 }, g);
+    const heading = el("line", { class: "heading", x1: 0, y1: 0, x2: BODY_R + 260, y2: 0 }, g);
     const label = el("text", { class: "label" }, g);
     label.textContent = r.id;
-    g.addEventListener("click", () => select(r.id));
+    g.addEventListener("click", (event) => {
+      event.stopPropagation();   // the floor itself clears the selection
+      select(r.id);
+    });
 
     const row = document.createElement("tr");
     row.innerHTML = "<td></td><td></td><td></td><td></td><td></td>";
@@ -158,10 +230,11 @@
 
   function laneOffset(r) {
     // Mirror Robot.footprint_mm: keep right on a two-lane aisle so opposing
-    // traffic is drawn apart; on a single lane there is only the centre line.
+    // traffic is drawn apart; on a single-file aisle -- a corridor, a one-way
+    // aisle or a station spur -- there is only the centre line.
     if (r.edge === null || r.next === null) return [0, 0];
     const e = edgesById.get(r.edge);
-    if (!e || e.single_lane) return [0, 0];
+    if (!e || (e.single_file ?? e.single_lane)) return [0, 0];
     const a = nodesById.get(r.node), b = nodesById.get(r.next);
     if (!a || !b) return [0, 0];
     const dx = b.x - a.x, dy = b.y - a.y;
@@ -219,9 +292,116 @@
     el("polyline", { class: "route", points: points.join(" ") }, layers.routes);
   }
 
+  function routeRemainingMm(r) {
+    // Walk the polyline the route layer draws: from where the robot is now,
+    // through every node still ahead of it.
+    let total = 0, px = r.x, py = r.y;
+    for (const id of r.route.slice(1)) {
+      const n = nodesById.get(id);
+      if (!n) break;
+      total += Math.hypot(n.x - px, n.y - py);
+      px = n.x; py = n.y;
+    }
+    return total;
+  }
+
+  function placeInspector(x, y) {
+    // Floor coordinates are millimetres in the SVG's viewBox; the card is an
+    // HTML overlay, so the CTM is what puts the two in the same place.
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const pt = svg.createSVGPoint();
+    pt.x = x; pt.y = y;
+    const at = pt.matrixTransform(ctm);
+    const rect = floor.getBoundingClientRect();
+    const card = insp.card;
+    const w = card.offsetWidth, h = card.offsetHeight;
+    const gap = 28, edge = 12;
+    // Right of the robot by default; flip to its left near the side panel.
+    let left = at.x - rect.left + gap;
+    if (left + w > rect.width - edge) left = at.x - rect.left - w - gap;
+    let top = at.y - rect.top - h / 2;
+    left = Math.max(edge, Math.min(left, rect.width - w - edge));
+    top = Math.max(edge, Math.min(top, rect.height - h - edge));
+    card.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  }
+
+  function renderInspector(robots) {
+    const r = selected === null ? null : robots.find((q) => q.id === selected);
+    if (!r) {
+      insp.card.hidden = true;
+      lastPathKey = "";
+      return;
+    }
+    insp.card.hidden = false;
+    insp.id.textContent = r.id;
+    insp.state.textContent = r.state;
+    insp.state.className = `pill ${r.state}`;
+
+    const goal = r.route.length ? r.route[r.route.length - 1] : null;
+    insp.eta.textContent = r.eta_ms == null ? "—" : fmtEta(r.eta_ms);
+    insp.goal.textContent = goal === null ? "standing by" : `to ${nodeLabel(goal)}`;
+
+    const low = r.battery <= 20;
+    insp.battery.textContent = `${r.battery}%`;
+    insp.battery.className = `inspector-figure${low ? " low" : ""}`;
+    insp.batteryBar.style.width = `${r.battery}%`;
+    insp.batteryBar.className = `bat-fill${low ? " low" : ""}`;
+
+    insp.task.textContent = r.task === null
+      ? "none"
+      : `#${r.task} ${r.leg === "TO_DROP" ? "carrying" : "to pickup"}` +
+        (r.queue > 1 ? ` +${r.queue - 1} queued` : "");
+    insp.distance.textContent = r.route.length > 1 ? fmtMetres(routeRemainingMm(r)) : "—";
+
+    insp.waitRow.hidden = !r.wait;
+    if (r.wait) {
+      insp.wait.textContent = r.wait.blocker >= 0
+        ? `AMR ${r.wait.blocker} · ${r.wait.kind}`
+        : `${r.wait.kind} at ${r.wait.resource}`;   // resource is already a label
+      insp.wait.className = "wait";
+    }
+
+    const hops = Math.max(0, r.route.length - 1);
+    insp.hops.textContent = hops ? `${hops} hop${hops === 1 ? "" : "s"}` : "at rest";
+    const key = `${r.id}:${r.route.join(",")}`;
+    if (key !== lastPathKey) {
+      // Rebuilding every frame would fight the reader scrolling a long route.
+      lastPathKey = key;
+      clear(insp.path);
+      const path = r.route.length ? r.route : [r.node];
+      path.forEach((id, i) => {
+        const n = nodesById.get(id);
+        const li = document.createElement("li");
+        li.textContent = nodeLabel(id);
+        if (i === 0) li.className = "here";
+        else if (i === path.length - 1) {
+          li.className = ["goal", n && n.pickup ? "pickup-goal" : "",
+            n && n.drop ? "drop-goal" : ""].join(" ").trim();
+        }
+        insp.path.appendChild(li);
+      });
+    }
+
+    const [ox, oy] = laneOffset(r);   // anchor on the drawn body, not the centre line
+    placeInspector(r.x + ox, r.y + oy);
+  }
+
   function select(id) {
     selected = selected === id ? null : id;
+    lastPathKey = "";
+    // Redraw at once rather than waiting for a frame: a finished run sends none.
+    for (const r of lastRobots) updateRobot(r);
+    drawRoute(lastRobots);
+    renderInspector(lastRobots);
   }
+
+  svg.addEventListener("click", () => { if (selected !== null) select(selected); });
+  insp.close.addEventListener("click", () => { if (selected !== null) select(selected); });
+  // The card is placed in pixels from an SVG transform, so a resize moves it.
+  window.addEventListener("resize", () => {
+    if (selected !== null) renderInspector(lastRobots);
+  });
 
   // ---- frame ---------------------------------------------------------------
 
@@ -237,8 +417,10 @@
         entry.g.remove(); entry.row.remove(); robotEls.delete(id);
       }
     }
+    lastRobots = f.robots;
     drawWaits(f.robots);
     drawRoute(f.robots);
+    renderInspector(f.robots);
 
     const c = f.counters;
     $("c-done").textContent = c.tasks_completed;
@@ -268,10 +450,6 @@
       note.className = "note";
     }
 
-    running = !f.finished && !f.error;
-    paused = f.paused;
-    $("pause").disabled = !running || f.source !== "dashboard";
-    $("pause").textContent = paused ? "Resume" : "Pause";
   }
 
   // ---- transport -----------------------------------------------------------
@@ -283,50 +461,10 @@
       const msg = JSON.parse(event.data);
       if (msg.type === "map") drawMap(msg.data);
       else if (msg.type === "frame") applyFrame(msg.data);
-      else if (msg.type === "idle") { $("empty").hidden = false; $("pause").disabled = true; }
+      else if (msg.type === "idle") { $("empty").hidden = false; insp.card.hidden = true; }
     };
     ws.onclose = () => setTimeout(connect, 1000);
   }
-
-  async function loadScenarios() {
-    const list = await (await fetch("/api/scenarios")).json();
-    const select = $("scenario");
-    for (const s of list) {
-      const opt = document.createElement("option");
-      opt.value = s.name;
-      opt.textContent = `${s.name} — ${s.physical_robots ? s.physical_robots + " physical" : s.robots + " AMRs"}`;
-      select.appendChild(opt);
-    }
-    select.value = list.some((s) => s.name === "visual30") ? "visual30" : list[0].name;
-  }
-
-  $("run-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const body = {
-      scenario: $("scenario").value,
-      seed: Number($("seed").value) || 0,
-      speed: Number($("speed").value),
-    };
-    const robots = Number($("robots").value);
-    if (robots > 0) body.robots = robots;
-    const tasks = Number($("tasks").value);
-    if (tasks > 0) body.tasks = tasks;
-    const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) {
-      const detail = (await res.json()).detail;
-      $("run-note").textContent = `Could not start: ${detail}`;
-      $("run-note").className = "note error";
-    }
-  });
-
-  $("pause").addEventListener("click", async () => {
-    await fetch(paused ? "/api/resume" : "/api/pause", { method: "POST" });
-  });
-
-  $("speed").addEventListener("change", async () => {
-    if (!running) return;
-    await fetch("/api/speed", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ speed: Number($("speed").value) }) });
-  });
 
   window.addEventListener("error", (event) => {
     const note = $("run-note");
@@ -334,6 +472,5 @@
     note.className = "note error";
   });
 
-  loadScenarios();
   connect();
 })();

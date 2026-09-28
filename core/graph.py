@@ -80,7 +80,25 @@ class Edge:
     yield decision must be taken at the last passing point before entry."""
 
     bidirectional: bool = True
-    """False makes the edge traversable u->v only."""
+    """False makes the edge traversable u->v only.
+
+    A one-way aisle is single-lane in the physical sense -- one file of traffic on
+    the centre line -- without being capacity one: robots still follow each other
+    nose to tail. That distinction is ``single_file`` below."""
+
+    @property
+    def single_file(self) -> bool:
+        """Whether this aisle carries one file of traffic rather than two abreast.
+
+        True for an exclusive corridor and for a one-way aisle, and the two get there
+        differently: a corridor admits one robot at a time in either direction, a
+        one-way aisle admits many but all travelling the same way. Either way nothing
+        ever passes anything head-on, so there is no second lane to keep to and the
+        robot drives the aisle's centre line (``Robot.footprint_mm``).
+
+        Only a two-way aisle wide enough for two AMRs abreast (ASM-5) is not single
+        file, and after the one-way conversion of the maps no aisle is."""
+        return self.single_lane or not self.bidirectional
 
     def other_end(self, node_id: int) -> int:
         if node_id == self.u:
@@ -108,6 +126,13 @@ class Graph:
     )
     _pair_index: dict[tuple[int, int], int] = field(default_factory=dict, repr=False)
     _blocked: set[int] = field(default_factory=set, repr=False)
+    _degree: dict[int, int] = field(default_factory=dict, repr=False)
+    """Undirected degree per node, cached at load. See ``degree``."""
+
+    _spur_edges: frozenset[int] = field(default_factory=frozenset, repr=False)
+    """Edges into a dead end, cached at load: the sensor model and the collision
+    geometry ask about them every tick."""
+
     _axis_aligned: bool = field(default=False, repr=False)
     """Whether every edge runs purely horizontally or vertically. Determines which
     geometric lower bound ``straight_line_ms`` may use; see its docstring."""
@@ -142,6 +167,16 @@ class Graph:
             self.nodes[edge.u].x_mm == self.nodes[edge.v].x_mm
             or self.nodes[edge.u].y_mm == self.nodes[edge.v].y_mm
             for edge in self.edges.values()
+        )
+        degree: dict[int, int] = {n: 0 for n in self.nodes}
+        for edge in self.edges.values():
+            degree[edge.u] += 1
+            degree[edge.v] += 1
+        self._degree = degree
+        self._spur_edges = frozenset(
+            edge.id
+            for edge in self.edges.values()
+            if degree[edge.u] == 1 or degree[edge.v] == 1
         )
 
     # -- queries -------------------------------------------------------------
@@ -254,7 +289,59 @@ class Graph:
 
     @property
     def single_lane_edges(self) -> tuple[int, ...]:
+        """Exclusive corridors: capacity one, either direction."""
         return tuple(e.id for e in self.edges.values() if e.single_lane)
+
+    @property
+    def one_way_edges(self) -> tuple[int, ...]:
+        return tuple(e.id for e in self.edges.values() if not e.bidirectional)
+
+    @property
+    def single_file_edges(self) -> tuple[int, ...]:
+        """Every aisle that carries one file of traffic -- corridors and one-way
+        aisles both. See ``Edge.single_file``."""
+        return tuple(e.id for e in self.edges.values() if e.single_file)
+
+    def two_lane_edges(self, exclude: frozenset[int] = frozenset()) -> tuple[int, ...]:
+        """Aisles that are neither a corridor nor one-way, so two AMRs may pass on
+        them abreast. ``exclude`` drops edges the caller accounts for otherwise --
+        station spurs, whose capacity-one resource already admits one robot at a
+        time."""
+        return tuple(
+            e.id
+            for e in self.edges.values()
+            if not self.is_single_file(e.id) and e.id not in exclude
+        )
+
+    def degree(self, node_id: int) -> int:
+        """How many aisles meet at ``node_id``, ignoring which way they run.
+
+        Structural degree, not out-degree, and the distinction is load-bearing on a
+        one-way map: a crossing of two one-way aisles has two ways out and four
+        aisles meeting, and it is a junction with a conflict region either way. Read
+        off the directed adjacency instead, every such crossing on the one-way grid
+        stopped counting as a junction and stopped being booked at all.
+        """
+        return self._degree.get(node_id, 0)
+
+    @property
+    def station_spur_edges(self) -> tuple[int, ...]:
+        """Edges into a dead end: the spur to a pickup, a drop or a bay."""
+        return tuple(sorted(self._spur_edges))
+
+    def is_single_file(self, edge_id: int) -> bool:
+        """Whether ``edge_id`` carries one file of traffic rather than two abreast.
+
+        The one predicate the collision geometry and the sensor model must agree on,
+        which is why it lives here and not at either call site. Three ways to be
+        single file: an exclusive corridor, a one-way aisle, and a spur into a dead
+        end -- the last structurally rather than by flag, because a spur is two-way
+        but ends somewhere only one robot fits. Getting the spur wrong is not
+        academic: with the flag alone the sensor model read a robot driving out of a
+        station as oncoming traffic safely in another lane, and drove a second robot
+        into it on four of five bench3 seeds.
+        """
+        return edge_id in self._spur_edges or self.edge(edge_id).single_file
 
     def reachable_from(self, start: int) -> frozenset[int]:
         """Nodes reachable from ``start``, honouring blockages and direction."""
@@ -312,10 +399,37 @@ class Graph:
         return failing
 
     def is_connected(self) -> bool:
+        """Whether every node can reach every other, following edge directions.
+
+        Strong connectivity, not weak: on a one-way map "reachable from node 0" and
+        "able to reach node 0" are different questions, and a map that answers only
+        the first has a node a robot can drive into and never leave. Checking one
+        direction from one node would have passed such a map.
+        """
         if not self.nodes:
             return False
         first = next(iter(self.nodes))
-        return self.reachable_from(first) == frozenset(self.nodes)
+        every = frozenset(self.nodes)
+        return self.reachable_from(first) == every and self.reaching(first) == every
+
+    def reaching(self, target: int) -> frozenset[int]:
+        """Every node from which ``target`` can be reached. The reverse of
+        ``reachable_from``, and identical to it on an all-bidirectional map."""
+        incoming: dict[int, list[int]] = {n: [] for n in self.nodes}
+        for edge in self.edges.values():
+            if edge.id in self._blocked:
+                continue
+            incoming[edge.v].append(edge.u)
+            if edge.bidirectional:
+                incoming[edge.u].append(edge.v)
+        seen = {target}
+        stack = [target]
+        while stack:
+            for previous in incoming[stack.pop()]:
+                if previous not in seen:
+                    seen.add(previous)
+                    stack.append(previous)
+        return frozenset(seen)
 
     def last_passing_point(self, route: list[int], corridor_edge: int) -> int | None:
         """The node on ``route`` where a single-lane yield must be decided.
@@ -486,6 +600,7 @@ class Graph:
     def __repr__(self) -> str:  # pragma: no cover - diagnostic only
         return (
             f"Graph({self.name!r}, {len(self.nodes)} nodes, {len(self.edges)} edges, "
-            f"{len(self.single_lane_edges)} single-lane, "
+            f"{len(self.single_lane_edges)} corridors, "
+            f"{len(self.one_way_edges)} one-way, "
             f"{len(self._blocked)} blocked)"
         )

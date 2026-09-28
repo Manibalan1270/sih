@@ -408,17 +408,21 @@ class Robot:
         """Position including lane offset, for the geometric collision check.
 
         Distinct from ``position_mm``, which returns the aisle centre line and is
-        what the dashboard animates. On a bidirectional aisle robots keep to their
-        own side (ASM-5), so opposing traffic is laterally separated and does not
-        collide; on a single-lane aisle there is only the centre line, so a head-on
-        is a real overlap. Collapsing the two would either invent collisions that
-        cannot happen or hide ones that can.
+        what the dashboard animates. The offset exists for one situation only: two
+        AMRs passing each other in opposite directions on an aisle wide enough for
+        both (ASM-5), where they are laterally separated and do not collide. On a
+        single-file aisle -- an exclusive corridor, or a one-way aisle -- there is
+        no such pair to separate and only the centre line, so a nose-to-tail
+        overlap is a real overlap. Collapsing the two cases would either invent
+        collisions that cannot happen or hide ones that can.
+
+        A station spur is single file too, and structurally rather than by flag: the
+        station resource admits one robot at a time, so nothing is ever alongside.
         """
         x, y = self.position_mm()
         if self.edge_id is None or self.next_node is None:
             return x, y
-        edge = self.graph.edge(self.edge_id)
-        if edge.single_lane:
+        if self.graph.is_single_file(self.edge_id):
             return x, y
 
         here = self.graph.node(self.current_node)
@@ -1363,14 +1367,19 @@ class Robot:
         remaining_ms = self._remaining_on_current_edge_ms()
         to_node = self._distance_to_next_node_mm()
         edge = self.graph.edge(self.edge_id)
-        entered_ms = self._region_entered_ms.get(self.current_node, now_ms)
+        # No carried-over time may reach further back than PATH can encode, or the
+        # plan a peer rebuilds is not the plan this robot holds (PLAN_BACKDATE_LIMIT_MS).
+        floor_ms = now_ms - config.PLAN_BACKDATE_LIMIT_MS
+        entered_ms = max(floor_ms, self._region_entered_ms.get(self.current_node, now_ms))
         # What the plan being replaced booked for the steps under the wheels: those
         # times are the robot's place in every queue and must carry over.
         if model.has_region(self.current_node):
             old_region = self._booked_enter(model.region(self.current_node))
             if old_region >= 0:
-                entered_ms = min(entered_ms, old_region)
+                entered_ms = min(entered_ms, max(floor_ms, old_region))
         old_lane = self._booked_enter(model.lane(self.edge_id, self.next_node))
+        if old_lane >= 0:
+            old_lane = max(floor_ms, old_lane)
         footprint = config.JUNCTION_FOOTPRINT_MM
         if model.has_region(self.next_node) and to_node <= footprint:
             # Inside the corner ahead already. The plan holds it and resumes from
@@ -1384,7 +1393,7 @@ class Robot:
                 prefix_node=self.current_node,
                 prefix_ms=entered_ms,
                 lane_entered_ms=old_lane,
-                region_entered_ms=self._booked_enter(model.region(self.next_node)),
+                region_entered_ms=self._booked_region_enter(model.region(self.next_node), floor_ms),
             )
         if model.has_region(self.next_node):
             at_ms = now_ms + (to_node - footprint) * 1000 // config.NOMINAL_SPEED_MM_S
@@ -1398,6 +1407,11 @@ class Robot:
             prefix_ms=entered_ms,
             lane_entered_ms=old_lane,
         )
+
+    def _booked_region_enter(self, resource, floor_ms: int) -> int:
+        """``_booked_enter`` floored at ``floor_ms``, keeping -1 for "not booked"."""
+        booked = self._booked_enter(resource)
+        return booked if booked < 0 else max(floor_ms, booked)
 
     def _booked_enter(self, resource) -> int:
         """When the current plan booked ``resource`` among the steps already
@@ -1509,7 +1523,8 @@ class Robot:
         if len(self.plan.nodes) == 1 and self.resources is not None:
             self.plan = resting_plan(
                 self.resources, robot_id=self.robot_id, plan_seq=self.plan_seq,
-                priority=self.task_priority, since_ms=self._rest_since_ms,
+                priority=self.task_priority,
+                since_ms=max(now_ms - config.PLAN_BACKDATE_LIMIT_MS, self._rest_since_ms),
                 now_ms=now_ms, leaf=self.plan.nodes[0],
             )
         self._broadcast_path(now_ms, result)
@@ -1653,19 +1668,36 @@ class Robot:
         if res.kind == REGION:
             return self._signed_distance_to_pos_mm(pos) <= -config.JUNCTION_FOOTPRINT_MM
         if res.kind == STATION:
+            if pos + 1 < len(plan.nodes):
+                # A station being driven out of. The spur is the station's, so it is
+                # not left at the first millimetre off the berth -- it is left when
+                # the robot is off the spur, which is the test a lane uses. While
+                # this released at the berth, a robot waiting at the spur's end for
+                # its junction had already told the fleet the station was free, and
+                # the next robot was let in on top of it.
+                return self._left_stretch_at(plan, pos + 1)
             if self.route_index == pos:
                 return self.edge_id is not None and self.progress_mm > 0
             return self.route_index > pos
         to_pos = pos + 1
         if to_pos >= len(plan.nodes):
             return False
-        d = self._signed_distance_to_pos_mm(to_pos)
-        to_node = plan.nodes[to_pos]
         if res.kind == CORRIDOR:
             # Done at the far node if a region takes over there (the region step
             # releases in its own time); a footprint past it if the far node is a
             # bend, so the node point is clear before the next robot enters.
+            d = self._signed_distance_to_pos_mm(to_pos)
+            to_node = plan.nodes[to_pos]
             return d <= (0 if model.has_region(to_node) else -config.JUNCTION_FOOTPRINT_MM)
+        return self._left_stretch_at(plan, to_pos)
+
+    def _left_stretch_at(self, plan, to_pos: int) -> bool:
+        """Whether the robot has run out the stretch ending at route position
+        ``to_pos``: past that node, or inside its region if it has one."""
+        model = self.resources
+        assert model is not None
+        d = self._signed_distance_to_pos_mm(to_pos)
+        to_node = plan.nodes[to_pos]
         return d <= (config.JUNCTION_FOOTPRINT_MM if model.has_region(to_node) else 0)
 
     def _sync_plan_progress(self, *, adopting: bool = False) -> None:
@@ -1731,6 +1763,8 @@ class Robot:
             )
         for booking in self.bookings.predecessors(res, step.enter_ms, exclude_robot=self.robot_id):
             if not self._peer_released(booking, entered_is_enough=res.kind == LANE):
+                if self._waits_on_a_robot_waiting_on_me(booking):
+                    self._replan_requested = True
                 return False, WaitCause(
                     kind="precedence", blocker_id=booking.robot_id, resource=str(res),
                     detail=f"booked ahead at {booking.enter_ms}",
@@ -1748,6 +1782,40 @@ class Robot:
                         detail="its PATH has not arrived",
                     )
         return True, None
+
+    def _waits_on_a_robot_waiting_on_me(self, booking: Booking) -> bool:
+        """Whether the robot I am waiting for cannot move until I do.
+
+        The two-robot cycle that a total order on one resource cannot see, because
+        it runs through two. A robot standing on a station spur holds it until it
+        crosses the junction at the spur's mouth; if I have booked that junction
+        ahead of it, it waits for me to cross and I wait for it to let go of the
+        station -- and both of us are correct by precedence.
+
+        It is all visible from my own table: ``booking`` is the resource under the
+        peer -- its opening step, the ground it is standing on rather than a choice
+        it made -- and the step after that is what it must enter to release me. If
+        my plan books that resource earlier than its does, neither of us moves
+        again. I am the one who can still choose, so I re-book; the rule is
+        one-sided by construction, because the peer's blocker is not standing on
+        anything and it never reaches this branch.
+        """
+        if booking.step_index != 0 or self.plan is None:
+            return False
+        theirs = self.bookings.plans.get(booking.robot_id)
+        peer = self.peers.get(booking.robot_id)
+        if theirs is None or peer is None or theirs.plan_seq != booking.plan_seq:
+            return False
+        release_at = peer.plan_index + 1
+        if release_at >= len(theirs.steps):
+            return False
+        needed = theirs.steps[release_at]
+        if not needed.resource.capacity_one:
+            return False
+        return any(
+            step.resource == needed.resource and step.enter_ms < needed.enter_ms
+            for step in self.plan.steps
+        )
 
     def _next_gate(self) -> tuple[list[Step], int] | None:
         """The next stretch not yet entered, up to and including the next place a
@@ -1833,6 +1901,21 @@ class Robot:
         if self.state is State.YIELD:
             self.machine.fire_if_possible(Event.CONFLICT_CLEARED, now_ms)
 
+    def _inside_corridor(self) -> bool:
+        """Whether the robot is far enough along a single-lane corridor to be in it.
+
+        Not merely "the edge under the wheels is single-lane". A robot held at a
+        corridor's mouth is still on that edge -- the mouth is a footprint short of
+        the node, inside the region behind -- and refusing to replan there left it
+        holding a plan it had already been told was invalid, with no way to ask for
+        another. That was the depot-spur deadlock: it waited at the choke for a
+        station a peer was standing on, while the peer waited for the junction this
+        robot had booked ahead of it and would now never cross.
+        """
+        if self.edge_id is None or not self.graph.edge(self.edge_id).single_lane:
+            return False
+        return self.progress_mm >= self._node_margin_mm(self.current_node)
+
     def _is_late(self, now_ms: int) -> bool:
         """Behind the plan by more than the slack: the next step's window opened
         REPLAN_SLACK_MS ago and the robot is not yet in it."""
@@ -1858,7 +1941,15 @@ class Robot:
             return
         if now_ms - self._last_replan_ms < config.INTENT_PERIOD_MS:
             return
-        if self.edge_id is not None and self.graph.edge(self.edge_id).single_lane:
+        if self._inside_corridor() and not self._replan_requested:
+            # Inside a corridor a robot re-books only when it has been told its plan
+            # is no good -- it lost a race, or it is half of a deadlock. Lateness
+            # alone is not reason enough: the corridor is atomic, the plan has to
+            # open with the stretch under the wheels, and re-timing that every
+            # second while crawling through gains nothing. But refusing outright
+            # left a robot stopped at the choke's far end holding a plan into a
+            # station a peer was standing on, with a perfectly good alternative
+            # plan available and no way to adopt it.
             return
         self._last_replan_ms = now_ms
         why = "lost a race" if self._replan_requested else "behind the plan"

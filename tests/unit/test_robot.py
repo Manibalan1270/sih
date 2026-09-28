@@ -16,7 +16,7 @@ from core.robot import MotionCommand, Robot, StepResult
 from core.state_machine import State
 from core.task import Leg, Task, TaskQueue, TaskState
 from simulator.engine import Engine
-from tests.conftest import ReferencePlanner
+from tests.conftest import ReferencePlanner, sever_the_right_half
 
 
 def make_robot(graph: Graph, *, robot_id: int = 1, home: int = 0) -> Robot:
@@ -187,9 +187,7 @@ class TestPlanning:
         """FR-3.7 / FR-6.2: declare UNREACHABLE and go back to IDLE, not FAULT."""
         graph = Graph.load("maps/benchmark_map.json")
         robot = make_robot(graph, home=0)
-        # Sever the right half of the warehouse entirely.
-        for edge_id in (4, 7, 10):
-            graph.block(edge_id)
+        sever_the_right_half(graph)
         robot.accept_task(make_task(pickup=5, drop=6), 0)
         result = robot.step(0)
         assert robot.state is State.IDLE
@@ -208,8 +206,7 @@ class TestPlanning:
         IDLE loop that would burn every tick re-failing the same plan."""
         graph = Graph.load("maps/benchmark_map.json")
         robot = make_robot(graph, home=0)
-        for edge_id in (4, 7, 10):
-            graph.block(edge_id)
+        sever_the_right_half(graph)
         robot.accept_task(make_task(pickup=5, drop=6), 0)
         engine = Engine(graph=graph, robots=[robot], seed=1)
         engine.run_ticks(50)

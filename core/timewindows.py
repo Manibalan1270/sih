@@ -138,7 +138,9 @@ class ResourceModel:
 
     def __init__(self, graph: Graph) -> None:
         self.graph = graph
-        self._degree = {n: len(graph.neighbours(n)) for n in graph.nodes}
+        self._degree = {n: graph.degree(n) for n in graph.nodes}
+        """Undirected: what makes a node a junction is that aisles cross there, not
+        how many of them lead out of it."""
 
     # -- classification ------------------------------------------------------
 
@@ -160,7 +162,23 @@ class ResourceModel:
         return Resource(STATION, leaf)
 
     def lane(self, edge_id: int, to_node: int) -> Resource:
+        """The resource covering the stretch of ``edge_id`` between the regions at
+        its ends, travelled towards ``to_node``.
+
+        A spur answers with its station, whichever way it is being driven. The spur
+        and the berth are one stretch of floor and must be one capacity-one
+        resource: while they were two -- a station for the robot driving in, a plain
+        unbounded lane for the one driving out -- two robots held what they each
+        thought was an empty spur and met head-on on it. Worse than the double
+        booking, the lane let the leaving robot *release* the station the moment it
+        rolled off the berth, so precedence waved the next robot in while the first
+        was still on the spur waiting for its junction.
+        """
         edge = self.graph.edge(edge_id)
+        if self.is_station(edge.u):
+            return self.station(edge.u)
+        if self.is_station(edge.v):
+            return self.station(edge.v)
         if edge.single_lane:
             return Resource(CORRIDOR, edge_id)
         return Resource(LANE, edge_id, to_node)
@@ -461,7 +479,7 @@ def plan_entries(model: ResourceModel, plan: RoutePlan) -> list[tuple[int, int]]
             if model.is_station(nodes[index + 1]):
                 wanted = model.station(nodes[index + 1])
         while cursor < len(steps) and steps[cursor].resource != wanted:
-            cursor += 1  # skips the departure station, which shares the lane's start
+            cursor += 1
         if cursor >= len(steps):
             raise ValueError(f"plan {plan} has no step for node {node}")
         entries.append((node, steps[cursor].enter_ms))
@@ -483,7 +501,8 @@ def plan_from_entries(
 
     Lanes end when the next node's resource is entered, which carries any FIFO delay
     the sender planned; regions and corridors take their fixed traversal time; the
-    closing station is booked for its depth plus the turnaround.
+    closing station is booked for its depth plus the turnaround, and an opening one
+    from the commit until the robot is clear of its spur.
     """
     nodes = tuple(n for n, _ in entries)
     times = [t for _, t in entries]
@@ -501,9 +520,19 @@ def plan_from_entries(
                 steps.append(Step(model.station(node), at, max(at, committed_ms) + REST_HOLD_MS))
             break
         if index == 0 and model.is_station(node):
-            # Leaving a station: it stays held from the commit until the robot has
-            # driven out to the anchor's region boundary.
-            steps.append(Step(model.station(node), min(committed_ms, at), at + model.station_in_ms(node)))
+            # Leaving a station: berth and spur are one step, held from the commit
+            # until the robot is off the spur -- which is when it enters the next
+            # node's resource, however long it waited at the spur's end for that
+            # window. Booking only the drive-out released the station with the robot
+            # still standing on it.
+            steps.append(
+                Step(
+                    model.station(node),
+                    min(committed_ms, at),
+                    max(at + model.station_in_ms(node), times[index + 1]),
+                )
+            )
+            continue
         lane_from = at
         if model.has_region(node):
             steps.append(Step(model.region(node), at, at + model.region_cross_ms))

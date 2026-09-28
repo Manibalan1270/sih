@@ -47,8 +47,19 @@ MAX_FIT_ITERATIONS = 64
 """Bound on how many times a group is pushed later to clear a blocking booking. Each
 push is monotone, so this bounds the work, not the correctness."""
 
-MAX_FIFO_REPAIRS = 6
-"""Bound on search reruns to repair a lane-order violation (see ``plan``)."""
+MAX_FIFO_REPAIRS = 64
+"""Bound on search reruns to repair a lane-order violation (see ``plan``).
+
+One repair settles one lane, so the bound has to cover the lanes a route can be
+queued on at once. Six was enough when every aisle carried two lanes and a queue
+split between them; with one file of traffic per aisle a robot routinely plans
+behind three or four peers on each of several lanes, and the search was giving up
+and returning no plan at all -- which read as a deadlock, because the robot that
+most needed to re-book was the one that could not. Sixty-four is where the
+loop stops needing it: the worst case measured -- one robot planning a 34-node route
+across a floor holding thirty booked plans -- settles after 58, and raising the bound
+past that changes nothing. It costs a few milliseconds there and is still a bound,
+not a guess about traffic."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +272,7 @@ class TimeWindowPlanner:
         """
         start = self._respect_lane_fifo(start, table, robot_id)
         constraints: dict[Resource, int] = {}
+        under_the_wheels = self._prefix_lane(start)
         for _ in range(MAX_FIFO_REPAIRS):
             plan = self._search(
                 table, start=start, goal=goal, robot_id=robot_id, priority=priority,
@@ -268,7 +280,7 @@ class TimeWindowPlanner:
             )
             if plan is None:
                 return None
-            offence = self._lane_order_offence(plan, table, robot_id)
+            offence = self._lane_order_offence(plan, table, robot_id, skip=under_the_wheels)
             if offence is None:
                 return plan
             lane, floor = offence
@@ -279,13 +291,38 @@ class TimeWindowPlanner:
         self.stats.unplannable += 1
         return None
 
+    def _prefix_lane(self, start: Start) -> Resource | None:
+        """The lane already under the wheels, which no repair can move."""
+        if start.prefix_node < 0:
+            return None
+        edge_id = self.model.graph.edge_between(start.prefix_node, start.node)
+        if edge_id is None:
+            return None
+        lane = self.model.lane(edge_id, start.node)
+        return lane if lane.kind == LANE else None
+
     def _lane_order_offence(
-        self, plan: RoutePlan, table: ResourceTable, robot_id: int
+        self,
+        plan: RoutePlan,
+        table: ResourceTable,
+        robot_id: int,
+        *,
+        skip: Resource | None = None,
     ) -> tuple[Resource, int] | None:
         """The first lane whose booked window overtakes someone, and when this
-        robot would have to enter it instead."""
+        robot would have to enter it instead.
+
+        ``skip`` is the lane the robot is standing on. Its window is a fact about
+        where the robot is, not a choice the search made, so a floor on it repairs
+        nothing -- the next search returns the same window, the loop sees no
+        progress and gives up, and the caller is told there is no route at all.
+        That is how a robot queued on a busy aisle stopped being able to re-book:
+        the one robot that most needed a new plan was the one the planner refused.
+        Order on the prefix lane is settled instead by ``_respect_lane_fifo``, which
+        moves the start rather than the lane.
+        """
         for step in plan.steps:
-            if step.resource.kind != LANE:
+            if step.resource.kind != LANE or step.resource == skip:
                 continue
             ahead = table.cuts_in_front_of(
                 step.resource, step.enter_ms, step.exit_ms, exclude_robot=robot_id
@@ -323,6 +360,12 @@ class TimeWindowPlanner:
 
         # (f, g, counter, node, waitable, came_from)
         counter = 0
+        # How many nodes the plan already names before the search adds any: the
+        # prefix under the wheels plus the start node itself. The budget is the
+        # frame's, and a route that cannot fit one is not a route this fleet can
+        # tell anyone about (config.MAX_PLAN_NODES).
+        opening = (1 if start.prefix_node >= 0 else 0) + 1
+        depth: dict[int, int] = {start.node: opening}
         best_g: dict[int, int] = {start.node: start.at_ms}
         parent: dict[int, tuple[int, _Group, int, int] | None] = {start.node: None}
         # node -> (parent_node, group, group_start, group_end)
@@ -360,8 +403,12 @@ class TimeWindowPlanner:
                 nxt = group.end_node
                 if nxt in closed:
                     continue
+                reach = depth[node] + len(group.nodes) - 1
+                if reach > config.MAX_PLAN_NODES:
+                    continue
                 if nxt in best_g and best_g[nxt] <= end:
                     continue
+                depth[nxt] = reach
                 best_g[nxt] = end
                 parent[nxt] = (node, group, s, end)
                 counter += 1
@@ -415,17 +462,12 @@ class TimeWindowPlanner:
             steps.append(Step(model.region(start.prefix_node), start.prefix_ms, start.prefix_ms + cross))
             lane_from += cross
         elif model.is_station(start.prefix_node):
-            # Leaving a station mid-spur: the departure step the wire form carries
-            # for every plan that starts at a station. It must be here too, or the
-            # sender's step indices and every receiver's disagree -- and a peer then
-            # waits for this robot to release a step it never had.
-            steps.append(
-                Step(
-                    model.station(start.prefix_node),
-                    start.prefix_ms,
-                    start.prefix_ms + model.station_in_ms(start.prefix_node),
-                )
-            )
+            # Leaving a station mid-spur. The spur *is* the station (ResourceModel.
+            # lane), so the step the generic branch below appends for the stretch
+            # under the wheels is already this station's -- one step, which is what
+            # the wire form rebuilds. Nothing to add here; what it needs is the hold
+            # opened at the berth rather than at the robot's present position.
+            lane_from = min(lane_from, start.prefix_ms)
         if start.lane_entered_ms >= 0:
             lane_from = min(lane_from, start.lane_entered_ms)
         if start.in_region and model.has_region(start.node):
@@ -476,23 +518,26 @@ class TimeWindowPlanner:
 
         nodes, steps = self._prefix(start)
         nodes.append(start.node)
-        if steps and steps[-1].resource.kind == LANE and chain:
-            # The lane under the wheels is held until the first group starts,
-            # which includes any wait at its end for that group's window.
+        under_the_wheels = steps and (
+            steps[-1].resource.kind == LANE
+            or (start.prefix_node >= 0 and steps[-1].resource == self.model.station(start.prefix_node))
+        )
+        if under_the_wheels and chain:
+            # The stretch under the wheels -- a lane, or the spur of the station
+            # being left -- is held until the first group starts, which includes any
+            # wait at its end for that group's window.
             last = steps[-1]
             steps[-1] = Step(last.resource, last.enter_ms, max(last.exit_ms, chain[0][1]))
-        if start.prefix_node < 0 and self.model.is_station(start.node) and chain:
-            # Leaving a station: hold it from the start until the robot has driven
-            # out to the anchor's region boundary, however long it waits for its
-            # first window. Peers then never plan into an occupied station.
-            depart = chain[0][1]
-            steps.append(
-                Step(
-                    self.model.station(start.node),
-                    min(committed_ms, start.at_ms),
-                    depart + self.model.station_in_ms(start.node),
-                )
-            )
+        # Leaving a station: the first group opens on the spur, which is the
+        # station's own resource, so rather than book it twice the hold is widened
+        # back to cover the wait at the berth. Peers then never plan into an
+        # occupied station, and none of them sees a step the wire form cannot
+        # rebuild.
+        hold_station_from = (
+            min(committed_ms, start.at_ms)
+            if start.prefix_node < 0 and self.model.is_station(start.node) and chain
+            else None
+        )
         for position, (group, s, end) in enumerate(chain):
             nodes.extend(group.nodes[1:])
             # Leaving a region the plan opened inside: the first stretch beyond it
@@ -509,7 +554,13 @@ class TimeWindowPlanner:
                 enter_ms, exit_ms = s + rel.enter, s + rel.exit
                 if index == 0 and opens_from is not None and rel.resource.kind in (LANE, CORRIDOR):
                     enter_ms = min(enter_ms, opens_from)
-                if index == len(group.rels) - 1 and rel.resource.kind == LANE:
+                if position == 0 and index == 0 and hold_station_from is not None:
+                    enter_ms = min(enter_ms, hold_station_from)
+                if index == len(group.rels) - 1 and rel.resource.kind in (LANE, STATION):
+                    # A closing station here is a spur being driven out of, held like
+                    # a lane until the robot enters what comes next. The station a
+                    # route *ends* at closes the last group, where ``follows_at`` is
+                    # that group's own end, so its turnaround is left alone.
                     exit_ms = max(end, follows_at)
                 steps.append(Step(rel.resource, enter_ms, exit_ms))
         return RoutePlan(robot_id, plan_seq, priority, committed_ms, tuple(nodes), tuple(steps))

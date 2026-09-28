@@ -26,12 +26,48 @@ def _raw(name: str) -> dict:
 class TestBenchmarkMapStructure:
     """FR-10.8: one single-lane choke corridor and >=2 longer bypasses."""
 
-    def test_has_exactly_one_declared_choke_corridor(self) -> None:
+    def test_the_choke_is_the_only_two_way_passage(self) -> None:
+        """The declared choke is a corridor, and the corridors are exactly the choke
+        passage: the segment itself and the two that approach it from either side.
+
+        It used to be enough to flag the middle segment, because its approaches were
+        two-lane aisles a robot could wait on. They are corridors now, so the whole
+        L_MID-to-R_MID passage is one atomic capacity-one run and a robot decides at
+        its mouth -- which is what FR-5.10's last passing point means.
+        """
         raw = _raw("benchmark_map")
         graph = Graph.from_dict(raw)
         choke = raw["choke_edge"]
         assert graph.edge(choke).single_lane, "the choke corridor must be single-lane"
-        assert graph.single_lane_edges == (choke,)
+        corridors = graph.single_lane_edges
+        assert choke in corridors
+        assert len(corridors) == 3, (
+            f"expected the choke and its two approaches, got {corridors}"
+        )
+        # Contiguous: the three corridors form one run through C_WEST and C_EAST.
+        ends = [graph.edge(e) for e in corridors]
+        touched = {n for e in ends for n in (e.u, e.v)}
+        assert len(touched) == 4, f"the corridor segments are not one run: {touched}"
+
+    def test_every_aisle_carries_one_file_of_traffic(self) -> None:
+        """The floor has no aisle two AMRs can be abreast on. Each is either a
+        two-way corridor holding one robot, a one-way aisle where everything travels
+        the same way, or a spur into a dead end that holds one robot by capacity.
+
+        This is the property the collision geometry rests on: ``Robot.footprint_mm``
+        puts a robot on the aisle centre line exactly when no opposing traffic can
+        share it, so a two-lane aisle appearing here would be drawn and collided as
+        if it were one lane.
+        """
+        graph = Graph.load(MAPS_DIR / "benchmark_map.json")
+        spurs = frozenset(graph.station_spur_edges)
+        assert not graph.two_lane_edges(exclude=spurs)
+
+    def test_both_directions_of_every_leg_exist(self) -> None:
+        """One-way aisles are laid as dual carriageways, so the floor stays
+        strongly connected and neither direction queues behind the other."""
+        graph = Graph.load(MAPS_DIR / "benchmark_map.json")
+        assert graph.is_connected(), "some node cannot be left, or cannot be reached"
 
     def test_at_least_two_longer_alternatives_bypass_the_choke(self) -> None:
         import networkx as nx
@@ -205,12 +241,29 @@ class TestStagingBays:
 
 class TestZonedMapStructure:
     @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
-    def test_has_single_lane_chokepoints(self, name: str) -> None:
+    def test_every_aisle_is_a_single_lane(self, name: str) -> None:
+        """The zoned floors are one-way grids: every aisle carries one file of
+        traffic, and none of them two abreast.
+
+        These maps used to have a handful of single-lane pick-aisles among two-lane
+        ones, to give arbitration something to resolve. Every aisle is single lane
+        now, and what it resolves is the junctions between them -- a one-way grid
+        cannot produce a head-on, so a crossing is the only conflict left.
+        """
         graph = Graph.load(MAPS_DIR / f"{name}.json")
-        assert graph.single_lane_edges, (
-            f"{name} has no single-lane aisle, so arbitration has nothing "
-            f"interesting to resolve"
+        spurs = frozenset(graph.station_spur_edges)
+        assert not graph.two_lane_edges(exclude=spurs), (
+            f"{name} has aisles two AMRs could meet abreast on"
         )
+        assert graph.one_way_edges, f"{name} has no one-way aisle"
+
+    @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
+    def test_the_one_way_grid_is_strongly_connected(self, name: str) -> None:
+        """Every node can be left as well as reached. An alternating one-way grid
+        fails this at its corners, which is why the perimeter circulates instead --
+        see scripts/generate_maps.py."""
+        graph = Graph.load(MAPS_DIR / f"{name}.json")
+        assert graph.is_connected()
 
     @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
     def test_grid_dimensions_match_the_node_count(self, name: str) -> None:

@@ -1,6 +1,6 @@
 {
  "name": "warehouse_zoned_30",
- "description": "Zoned warehouse for the 30-AMR visual scenario. 12x6 grid of aisle intersections (44 m x 25 m), partitioned into 6 zones as 3 column bands x 2 row bands. Columns 4 and 7 are single-lane pick-aisles, so there are two interior chokepoints rather than one, and robots have a real choice of which to contend for. Fits 8-bit node and edge ids.",
+ "description": "Zoned warehouse for the 30-AMR visual scenario. 12x6 grid of aisle intersections (44 m x 25 m), partitioned into 6 zones as 3 column bands x 2 row bands. Every aisle is a single lane travelled one way: the perimeter circulates as a directed ring and the interior rows and columns alternate, so no two robots ever meet head-on and contention is confined to the junctions between them. Fits 8-bit node and edge ids.",
  "grid": {
   "cols": 12,
   "rows": 6
@@ -1343,802 +1343,950 @@
   {
    "id": 0,
    "u": 0,
-   "v": 72
+   "v": 72,
+   "bidirectional": false
   },
   {
    "id": 1,
    "u": 72,
-   "v": 1
+   "v": 1,
+   "bidirectional": false
   },
   {
    "id": 2,
    "u": 1,
-   "v": 73
+   "v": 73,
+   "bidirectional": false
   },
   {
    "id": 3,
    "u": 73,
-   "v": 2
+   "v": 2,
+   "bidirectional": false
   },
   {
    "id": 4,
    "u": 2,
-   "v": 74
+   "v": 74,
+   "bidirectional": false
   },
   {
    "id": 5,
    "u": 74,
-   "v": 3
+   "v": 3,
+   "bidirectional": false
   },
   {
    "id": 6,
    "u": 3,
-   "v": 75
+   "v": 75,
+   "bidirectional": false
   },
   {
    "id": 7,
    "u": 75,
-   "v": 4
+   "v": 4,
+   "bidirectional": false
   },
   {
    "id": 8,
    "u": 4,
-   "v": 76
+   "v": 76,
+   "bidirectional": false
   },
   {
    "id": 9,
    "u": 76,
-   "v": 5
+   "v": 5,
+   "bidirectional": false
   },
   {
    "id": 10,
    "u": 5,
-   "v": 77
+   "v": 77,
+   "bidirectional": false
   },
   {
    "id": 11,
    "u": 77,
-   "v": 6
+   "v": 6,
+   "bidirectional": false
   },
   {
    "id": 12,
    "u": 6,
-   "v": 78
+   "v": 78,
+   "bidirectional": false
   },
   {
    "id": 13,
    "u": 78,
-   "v": 7
+   "v": 7,
+   "bidirectional": false
   },
   {
    "id": 14,
    "u": 7,
-   "v": 79
+   "v": 79,
+   "bidirectional": false
   },
   {
    "id": 15,
    "u": 79,
-   "v": 8
+   "v": 8,
+   "bidirectional": false
   },
   {
    "id": 16,
    "u": 8,
-   "v": 80
+   "v": 80,
+   "bidirectional": false
   },
   {
    "id": 17,
    "u": 80,
-   "v": 9
+   "v": 9,
+   "bidirectional": false
   },
   {
    "id": 18,
    "u": 9,
-   "v": 81
+   "v": 81,
+   "bidirectional": false
   },
   {
    "id": 19,
    "u": 81,
-   "v": 10
+   "v": 10,
+   "bidirectional": false
   },
   {
    "id": 20,
    "u": 10,
-   "v": 82
+   "v": 82,
+   "bidirectional": false
   },
   {
    "id": 21,
    "u": 82,
-   "v": 11
+   "v": 11,
+   "bidirectional": false
   },
   {
    "id": 22,
-   "u": 12,
-   "v": 13
+   "u": 13,
+   "v": 12,
+   "bidirectional": false
   },
   {
    "id": 23,
-   "u": 13,
-   "v": 14
+   "u": 14,
+   "v": 13,
+   "bidirectional": false
   },
   {
    "id": 24,
-   "u": 14,
-   "v": 15
+   "u": 15,
+   "v": 14,
+   "bidirectional": false
   },
   {
    "id": 25,
-   "u": 15,
-   "v": 16
+   "u": 16,
+   "v": 15,
+   "bidirectional": false
   },
   {
    "id": 26,
-   "u": 16,
-   "v": 17
+   "u": 17,
+   "v": 16,
+   "bidirectional": false
   },
   {
    "id": 27,
-   "u": 17,
-   "v": 18
+   "u": 18,
+   "v": 17,
+   "bidirectional": false
   },
   {
    "id": 28,
-   "u": 18,
-   "v": 19
+   "u": 19,
+   "v": 18,
+   "bidirectional": false
   },
   {
    "id": 29,
-   "u": 19,
-   "v": 20
+   "u": 20,
+   "v": 19,
+   "bidirectional": false
   },
   {
    "id": 30,
-   "u": 20,
-   "v": 21
+   "u": 21,
+   "v": 20,
+   "bidirectional": false
   },
   {
    "id": 31,
-   "u": 21,
-   "v": 22
+   "u": 22,
+   "v": 21,
+   "bidirectional": false
   },
   {
    "id": 32,
-   "u": 22,
-   "v": 23
+   "u": 23,
+   "v": 22,
+   "bidirectional": false
   },
   {
    "id": 33,
    "u": 24,
-   "v": 25
+   "v": 25,
+   "bidirectional": false
   },
   {
    "id": 34,
    "u": 25,
-   "v": 26
+   "v": 26,
+   "bidirectional": false
   },
   {
    "id": 35,
    "u": 26,
-   "v": 27
+   "v": 27,
+   "bidirectional": false
   },
   {
    "id": 36,
    "u": 27,
-   "v": 28
+   "v": 28,
+   "bidirectional": false
   },
   {
    "id": 37,
    "u": 28,
-   "v": 29
+   "v": 29,
+   "bidirectional": false
   },
   {
    "id": 38,
    "u": 29,
-   "v": 30
+   "v": 30,
+   "bidirectional": false
   },
   {
    "id": 39,
    "u": 30,
-   "v": 31
+   "v": 31,
+   "bidirectional": false
   },
   {
    "id": 40,
    "u": 31,
-   "v": 32
+   "v": 32,
+   "bidirectional": false
   },
   {
    "id": 41,
    "u": 32,
-   "v": 33
+   "v": 33,
+   "bidirectional": false
   },
   {
    "id": 42,
    "u": 33,
-   "v": 34
+   "v": 34,
+   "bidirectional": false
   },
   {
    "id": 43,
    "u": 34,
-   "v": 35
+   "v": 35,
+   "bidirectional": false
   },
   {
    "id": 44,
-   "u": 36,
-   "v": 37
+   "u": 37,
+   "v": 36,
+   "bidirectional": false
   },
   {
    "id": 45,
-   "u": 37,
-   "v": 38
+   "u": 38,
+   "v": 37,
+   "bidirectional": false
   },
   {
    "id": 46,
-   "u": 38,
-   "v": 39
+   "u": 39,
+   "v": 38,
+   "bidirectional": false
   },
   {
    "id": 47,
-   "u": 39,
-   "v": 40
+   "u": 40,
+   "v": 39,
+   "bidirectional": false
   },
   {
    "id": 48,
-   "u": 40,
-   "v": 41
+   "u": 41,
+   "v": 40,
+   "bidirectional": false
   },
   {
    "id": 49,
-   "u": 41,
-   "v": 42
+   "u": 42,
+   "v": 41,
+   "bidirectional": false
   },
   {
    "id": 50,
-   "u": 42,
-   "v": 43
+   "u": 43,
+   "v": 42,
+   "bidirectional": false
   },
   {
    "id": 51,
-   "u": 43,
-   "v": 44
+   "u": 44,
+   "v": 43,
+   "bidirectional": false
   },
   {
    "id": 52,
-   "u": 44,
-   "v": 45
+   "u": 45,
+   "v": 44,
+   "bidirectional": false
   },
   {
    "id": 53,
-   "u": 45,
-   "v": 46
+   "u": 46,
+   "v": 45,
+   "bidirectional": false
   },
   {
    "id": 54,
-   "u": 46,
-   "v": 47
+   "u": 47,
+   "v": 46,
+   "bidirectional": false
   },
   {
    "id": 55,
    "u": 48,
-   "v": 49
+   "v": 49,
+   "bidirectional": false
   },
   {
    "id": 56,
    "u": 49,
-   "v": 50
+   "v": 50,
+   "bidirectional": false
   },
   {
    "id": 57,
    "u": 50,
-   "v": 51
+   "v": 51,
+   "bidirectional": false
   },
   {
    "id": 58,
    "u": 51,
-   "v": 52
+   "v": 52,
+   "bidirectional": false
   },
   {
    "id": 59,
    "u": 52,
-   "v": 53
+   "v": 53,
+   "bidirectional": false
   },
   {
    "id": 60,
    "u": 53,
-   "v": 54
+   "v": 54,
+   "bidirectional": false
   },
   {
    "id": 61,
    "u": 54,
-   "v": 55
+   "v": 55,
+   "bidirectional": false
   },
   {
    "id": 62,
    "u": 55,
-   "v": 56
+   "v": 56,
+   "bidirectional": false
   },
   {
    "id": 63,
    "u": 56,
-   "v": 57
+   "v": 57,
+   "bidirectional": false
   },
   {
    "id": 64,
    "u": 57,
-   "v": 58
+   "v": 58,
+   "bidirectional": false
   },
   {
    "id": 65,
    "u": 58,
-   "v": 59
+   "v": 59,
+   "bidirectional": false
   },
   {
    "id": 66,
-   "u": 60,
-   "v": 83
+   "u": 61,
+   "v": 83,
+   "bidirectional": false
   },
   {
    "id": 67,
    "u": 83,
-   "v": 61
+   "v": 60,
+   "bidirectional": false
   },
   {
    "id": 68,
-   "u": 61,
-   "v": 84
+   "u": 62,
+   "v": 84,
+   "bidirectional": false
   },
   {
    "id": 69,
    "u": 84,
-   "v": 62
+   "v": 61,
+   "bidirectional": false
   },
   {
    "id": 70,
-   "u": 62,
-   "v": 85
+   "u": 63,
+   "v": 85,
+   "bidirectional": false
   },
   {
    "id": 71,
    "u": 85,
-   "v": 63
+   "v": 62,
+   "bidirectional": false
   },
   {
    "id": 72,
-   "u": 63,
-   "v": 86
+   "u": 64,
+   "v": 86,
+   "bidirectional": false
   },
   {
    "id": 73,
    "u": 86,
-   "v": 64
+   "v": 63,
+   "bidirectional": false
   },
   {
    "id": 74,
-   "u": 64,
-   "v": 87
+   "u": 65,
+   "v": 87,
+   "bidirectional": false
   },
   {
    "id": 75,
    "u": 87,
-   "v": 65
+   "v": 64,
+   "bidirectional": false
   },
   {
    "id": 76,
-   "u": 65,
-   "v": 88
+   "u": 66,
+   "v": 88,
+   "bidirectional": false
   },
   {
    "id": 77,
    "u": 88,
-   "v": 66
+   "v": 65,
+   "bidirectional": false
   },
   {
    "id": 78,
-   "u": 66,
-   "v": 89
+   "u": 67,
+   "v": 89,
+   "bidirectional": false
   },
   {
    "id": 79,
    "u": 89,
-   "v": 67
+   "v": 66,
+   "bidirectional": false
   },
   {
    "id": 80,
-   "u": 67,
-   "v": 90
+   "u": 68,
+   "v": 90,
+   "bidirectional": false
   },
   {
    "id": 81,
    "u": 90,
-   "v": 68
+   "v": 67,
+   "bidirectional": false
   },
   {
    "id": 82,
-   "u": 68,
-   "v": 91
+   "u": 69,
+   "v": 91,
+   "bidirectional": false
   },
   {
    "id": 83,
    "u": 91,
-   "v": 69
+   "v": 68,
+   "bidirectional": false
   },
   {
    "id": 84,
-   "u": 69,
-   "v": 92
+   "u": 70,
+   "v": 92,
+   "bidirectional": false
   },
   {
    "id": 85,
    "u": 92,
-   "v": 70
+   "v": 69,
+   "bidirectional": false
   },
   {
    "id": 86,
-   "u": 70,
-   "v": 93
+   "u": 71,
+   "v": 93,
+   "bidirectional": false
   },
   {
    "id": 87,
    "u": 93,
-   "v": 71
+   "v": 70,
+   "bidirectional": false
   },
   {
    "id": 88,
-   "u": 0,
-   "v": 94
+   "u": 12,
+   "v": 94,
+   "bidirectional": false
   },
   {
    "id": 89,
    "u": 94,
-   "v": 12
+   "v": 0,
+   "bidirectional": false
   },
   {
    "id": 90,
-   "u": 12,
-   "v": 95
+   "u": 24,
+   "v": 95,
+   "bidirectional": false
   },
   {
    "id": 91,
    "u": 95,
-   "v": 24
+   "v": 12,
+   "bidirectional": false
   },
   {
    "id": 92,
-   "u": 24,
-   "v": 96
+   "u": 36,
+   "v": 96,
+   "bidirectional": false
   },
   {
    "id": 93,
    "u": 96,
-   "v": 36
+   "v": 24,
+   "bidirectional": false
   },
   {
    "id": 94,
-   "u": 36,
-   "v": 97
+   "u": 48,
+   "v": 97,
+   "bidirectional": false
   },
   {
    "id": 95,
    "u": 97,
-   "v": 48
+   "v": 36,
+   "bidirectional": false
   },
   {
    "id": 96,
-   "u": 48,
-   "v": 98
+   "u": 60,
+   "v": 98,
+   "bidirectional": false
   },
   {
    "id": 97,
    "u": 98,
-   "v": 60
+   "v": 48,
+   "bidirectional": false
   },
   {
    "id": 98,
-   "u": 1,
-   "v": 13
+   "u": 13,
+   "v": 1,
+   "bidirectional": false
   },
   {
    "id": 99,
-   "u": 13,
-   "v": 25
+   "u": 25,
+   "v": 13,
+   "bidirectional": false
   },
   {
    "id": 100,
-   "u": 25,
-   "v": 37
+   "u": 37,
+   "v": 25,
+   "bidirectional": false
   },
   {
    "id": 101,
-   "u": 37,
-   "v": 49
+   "u": 49,
+   "v": 37,
+   "bidirectional": false
   },
   {
    "id": 102,
-   "u": 49,
-   "v": 61
+   "u": 61,
+   "v": 49,
+   "bidirectional": false
   },
   {
    "id": 103,
    "u": 2,
-   "v": 14
+   "v": 14,
+   "bidirectional": false
   },
   {
    "id": 104,
    "u": 14,
-   "v": 26
+   "v": 26,
+   "bidirectional": false
   },
   {
    "id": 105,
    "u": 26,
-   "v": 38
+   "v": 38,
+   "bidirectional": false
   },
   {
    "id": 106,
    "u": 38,
-   "v": 50
+   "v": 50,
+   "bidirectional": false
   },
   {
    "id": 107,
    "u": 50,
-   "v": 62
+   "v": 62,
+   "bidirectional": false
   },
   {
    "id": 108,
-   "u": 3,
-   "v": 15
+   "u": 15,
+   "v": 3,
+   "bidirectional": false
   },
   {
    "id": 109,
-   "u": 15,
-   "v": 27
+   "u": 27,
+   "v": 15,
+   "bidirectional": false
   },
   {
    "id": 110,
-   "u": 27,
-   "v": 39
+   "u": 39,
+   "v": 27,
+   "bidirectional": false
   },
   {
    "id": 111,
-   "u": 39,
-   "v": 51
+   "u": 51,
+   "v": 39,
+   "bidirectional": false
   },
   {
    "id": 112,
-   "u": 51,
-   "v": 63
+   "u": 63,
+   "v": 51,
+   "bidirectional": false
   },
   {
    "id": 113,
    "u": 4,
    "v": 16,
-   "single_lane": true
+   "bidirectional": false
   },
   {
    "id": 114,
    "u": 16,
    "v": 28,
-   "single_lane": true
+   "bidirectional": false
   },
   {
    "id": 115,
    "u": 28,
    "v": 40,
-   "single_lane": true
+   "bidirectional": false
   },
   {
    "id": 116,
    "u": 40,
    "v": 52,
-   "single_lane": true
+   "bidirectional": false
   },
   {
    "id": 117,
    "u": 52,
    "v": 64,
-   "single_lane": true
+   "bidirectional": false
   },
   {
    "id": 118,
-   "u": 5,
-   "v": 17
+   "u": 17,
+   "v": 5,
+   "bidirectional": false
   },
   {
    "id": 119,
-   "u": 17,
-   "v": 29
+   "u": 29,
+   "v": 17,
+   "bidirectional": false
   },
   {
    "id": 120,
-   "u": 29,
-   "v": 41
+   "u": 41,
+   "v": 29,
+   "bidirectional": false
   },
   {
    "id": 121,
-   "u": 41,
-   "v": 53
+   "u": 53,
+   "v": 41,
+   "bidirectional": false
   },
   {
    "id": 122,
-   "u": 53,
-   "v": 65
+   "u": 65,
+   "v": 53,
+   "bidirectional": false
   },
   {
    "id": 123,
    "u": 6,
-   "v": 18
+   "v": 18,
+   "bidirectional": false
   },
   {
    "id": 124,
    "u": 18,
-   "v": 30
+   "v": 30,
+   "bidirectional": false
   },
   {
    "id": 125,
    "u": 30,
-   "v": 42
+   "v": 42,
+   "bidirectional": false
   },
   {
    "id": 126,
    "u": 42,
-   "v": 54
+   "v": 54,
+   "bidirectional": false
   },
   {
    "id": 127,
    "u": 54,
-   "v": 66
+   "v": 66,
+   "bidirectional": false
   },
   {
    "id": 128,
-   "u": 7,
-   "v": 19,
-   "single_lane": true
+   "u": 19,
+   "v": 7,
+   "bidirectional": false
   },
   {
    "id": 129,
-   "u": 19,
-   "v": 31,
-   "single_lane": true
+   "u": 31,
+   "v": 19,
+   "bidirectional": false
   },
   {
    "id": 130,
-   "u": 31,
-   "v": 43,
-   "single_lane": true
+   "u": 43,
+   "v": 31,
+   "bidirectional": false
   },
   {
    "id": 131,
-   "u": 43,
-   "v": 55,
-   "single_lane": true
+   "u": 55,
+   "v": 43,
+   "bidirectional": false
   },
   {
    "id": 132,
-   "u": 55,
-   "v": 67,
-   "single_lane": true
+   "u": 67,
+   "v": 55,
+   "bidirectional": false
   },
   {
    "id": 133,
    "u": 8,
-   "v": 20
+   "v": 20,
+   "bidirectional": false
   },
   {
    "id": 134,
    "u": 20,
-   "v": 32
+   "v": 32,
+   "bidirectional": false
   },
   {
    "id": 135,
    "u": 32,
-   "v": 44
+   "v": 44,
+   "bidirectional": false
   },
   {
    "id": 136,
    "u": 44,
-   "v": 56
+   "v": 56,
+   "bidirectional": false
   },
   {
    "id": 137,
    "u": 56,
-   "v": 68
+   "v": 68,
+   "bidirectional": false
   },
   {
    "id": 138,
-   "u": 9,
-   "v": 21
+   "u": 21,
+   "v": 9,
+   "bidirectional": false
   },
   {
    "id": 139,
-   "u": 21,
-   "v": 33
+   "u": 33,
+   "v": 21,
+   "bidirectional": false
   },
   {
    "id": 140,
-   "u": 33,
-   "v": 45
+   "u": 45,
+   "v": 33,
+   "bidirectional": false
   },
   {
    "id": 141,
-   "u": 45,
-   "v": 57
+   "u": 57,
+   "v": 45,
+   "bidirectional": false
   },
   {
    "id": 142,
-   "u": 57,
-   "v": 69
+   "u": 69,
+   "v": 57,
+   "bidirectional": false
   },
   {
    "id": 143,
    "u": 10,
-   "v": 22
+   "v": 22,
+   "bidirectional": false
   },
   {
    "id": 144,
    "u": 22,
-   "v": 34
+   "v": 34,
+   "bidirectional": false
   },
   {
    "id": 145,
    "u": 34,
-   "v": 46
+   "v": 46,
+   "bidirectional": false
   },
   {
    "id": 146,
    "u": 46,
-   "v": 58
+   "v": 58,
+   "bidirectional": false
   },
   {
    "id": 147,
    "u": 58,
-   "v": 70
+   "v": 70,
+   "bidirectional": false
   },
   {
    "id": 148,
    "u": 11,
-   "v": 99
+   "v": 99,
+   "bidirectional": false
   },
   {
    "id": 149,
    "u": 99,
-   "v": 23
+   "v": 23,
+   "bidirectional": false
   },
   {
    "id": 150,
    "u": 23,
-   "v": 100
+   "v": 100,
+   "bidirectional": false
   },
   {
    "id": 151,
    "u": 100,
-   "v": 35
+   "v": 35,
+   "bidirectional": false
   },
   {
    "id": 152,
    "u": 35,
-   "v": 101
+   "v": 101,
+   "bidirectional": false
   },
   {
    "id": 153,
    "u": 101,
-   "v": 47
+   "v": 47,
+   "bidirectional": false
   },
   {
    "id": 154,
    "u": 47,
-   "v": 102
+   "v": 102,
+   "bidirectional": false
   },
   {
    "id": 155,
    "u": 102,
-   "v": 59
+   "v": 59,
+   "bidirectional": false
   },
   {
    "id": 156,
    "u": 59,
-   "v": 103
+   "v": 103,
+   "bidirectional": false
   },
   {
    "id": 157,
    "u": 103,
-   "v": 71
+   "v": 71,
+   "bidirectional": false
   },
   {
    "id": 158,
@@ -2351,10 +2499,7 @@
    "v": 145
   }
  ],
- "single_lane_cols": [
-  4,
-  7
- ],
+ "one_way_aisles": true,
  "pickup_nodes": [
   104,
   105,

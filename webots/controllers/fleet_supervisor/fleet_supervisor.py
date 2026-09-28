@@ -44,6 +44,8 @@ from web.backend import telemetry  # noqa: E402
 MM = 0.001
 ROBOT_Z = 0.15
 PUSH_PERIOD_S = 0.1
+DIRECTIVE_PERIOD_S = 1.0
+"""How often to ask the dashboard what a human has asked for."""
 LABEL_PERIOD_S = 0.25
 PROBE_SECONDS = 8.0
 SCREENSHOT_AFTER_S = 6.0
@@ -62,6 +64,19 @@ STATE_COLOURS = {
 LOW_BATTERY_PCT = 20
 
 
+def world_file(name: str | None) -> Path | None:
+    """The world that renders a scenario, if one has been generated for it.
+
+    A world file fixes both the floor geometry and the number of AMR bodies in
+    it, so a scenario can only be shown in its own world -- switching scenarios
+    means loading another file, not rebuilding this one.
+    """
+    if not name:
+        return None
+    path = REPO_ROOT / "webots" / "worlds" / f"{name}.wbt"
+    return path if path.exists() else None
+
+
 class DashboardPush:
     """Fire-and-forget POSTs to the dashboard on a worker thread.
 
@@ -73,21 +88,40 @@ class DashboardPush:
         self.base = base_url.rstrip("/")
         self._latest: dict | None = None
         self._map: dict | None = None
+        self._last_map: dict | None = None
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._backoff_until = 0.0
         self.connected = False
+        self.directive = 0
+        """Generation of the run this supervisor is currently showing. Stamped on
+        every push so the dashboard can tell an acknowledged run from a stale one."""
         threading.Thread(target=self._loop, daemon=True, name="dashboard-push").start()
 
     def send_map(self, data: dict) -> None:
         with self._lock:
+            data = dict(data, directive=self.directive)
             self._map = data
+            self._last_map = data
         self._wake.set()
 
     def send_frame(self, data: dict) -> None:
         with self._lock:
+            data["directive"] = self.directive
             self._latest = data
         self._wake.set()
+
+    def fetch_directive(self) -> dict | None:
+        """What Run Control last asked for, or None if the dashboard is not there.
+
+        A GET the supervisor makes: the dashboard never opens a connection to the
+        world, so nothing about this is a channel from a browser to a robot.
+        """
+        try:
+            with urllib.request.urlopen(self.base + "/api/external/directive", timeout=0.5) as reply:
+                return json.loads(reply.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, TimeoutError, ValueError):
+            return None
 
     def _post(self, path: str, data: dict) -> bool:
         body = json.dumps(data).encode("utf-8")
@@ -125,7 +159,7 @@ class DashboardPush:
                     self._backoff_until = time.time() + 3.0
                     with self._lock:
                         if self._map is None:
-                            self._map = map_data  # resend the map when it comes back
+                            self._map = self._last_map  # resend the map when it comes back
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -152,11 +186,26 @@ def main(argv: list[str]) -> None:
     ticks_per_step = max(1, step_ms // config.MOTION_TICK_MS)
 
     scenario = scenarios.get(args.scenario)
-    sim = scenario_module.build(
-        scenarios.clamped(scenario) if args.robots is None else scenario,
-        seed=args.seed,
-        robots=args.robots,
-    )
+    push = None if (args.no_dashboard or args.probe) else DashboardPush(args.dashboard)
+
+    # A world loaded to satisfy a directive adopts it before building anything,
+    # so it comes up already showing the run that was asked for rather than the
+    # seed frozen into its controllerArgs.
+    seed, robot_count = args.seed, args.robots
+    opening = push.fetch_directive() if push is not None else None
+    if opening and opening.get("generation") and opening.get("scenario") == scenario.name:
+        seed = opening.get("seed", seed)
+        robot_count = opening.get("robots") or robot_count
+        push.directive = opening["generation"]
+
+    def build_run(seed: int, robots: int | None):
+        return scenario_module.build(
+            scenarios.clamped(scenario) if robots is None else scenario,
+            seed=seed,
+            robots=robots,
+        )
+
+    sim = build_run(seed, robot_count)
     fleet = list(sim.engine.robots)
 
     bodies, colours, cargo, last_state = {}, {}, {}, {}
@@ -171,12 +220,12 @@ def main(argv: list[str]) -> None:
         box = supervisor.getFromDef(f"AMR_{robot.robot_id}_CARGO")
         cargo[robot.robot_id] = box.getField("scale") if box else None
 
-    push = None if (args.no_dashboard or args.probe) else DashboardPush(args.dashboard)
     if push is not None:
         push.send_map(telemetry.map_payload(sim))
 
     headings: dict[int, float] = {}
-    last_push = last_label = 0.0
+    last_push = last_label = last_directive = 0.0
+    declined = 0   # a generation this world cannot show; do not keep retrying it
     screenshot_taken = False
     finished = False
     wall_start = time.perf_counter()
@@ -184,6 +233,45 @@ def main(argv: list[str]) -> None:
     limit_ms = sim.engine.now_ms + args.max_ms
 
     while supervisor.step(step_ms) != -1:
+        # Run Control is the one place a run is started. This world follows it.
+        if push is not None and time.perf_counter() - last_directive >= DIRECTIVE_PERIOD_S:
+            last_directive = time.perf_counter()
+            wanted = push.fetch_directive() or {}
+            generation = wanted.get("generation", 0)
+            if generation > push.directive and generation != declined:
+                if wanted.get("scenario") == scenario.name:
+                    # Same world: rebuild the run in place and re-drive the same
+                    # bodies from the new engine. Nothing is respawned.
+                    asked = wanted.get("robots") or args.robots
+                    sim = build_run(wanted.get("seed", 0), min(asked, len(bodies)) if asked else None)
+                    fleet = list(sim.engine.robots)
+                    headings.clear()
+                    last_state.clear()
+                    finished = False
+                    wall_start = time.perf_counter()
+                    sim_start_ms = sim.engine.now_ms
+                    limit_ms = sim.engine.now_ms + args.max_ms
+                    push.directive = generation
+                    push.send_map(telemetry.map_payload(sim))
+                    print(f"adopted run {generation}: {scenario.name} seed {wanted.get('seed')}")
+                elif world_file(wanted.get("scenario")) is not None:
+                    # Another scenario means another world. Load it; the
+                    # supervisor that comes up there reads the same directive.
+                    other = world_file(wanted.get("scenario"))
+                    print(f"loading {other.name} for run {generation}")
+                    supervisor.worldLoad(str(other))
+                    return
+                else:
+                    # Never stamp a generation this world is not showing: the
+                    # dashboard would take these frames for the run it asked for.
+                    declined = generation
+                    print(
+                        f"cannot show {wanted.get('scenario')}: no world file for it; "
+                        f"staying on {scenario.name}. Generate one with "
+                        f"scripts/generate_world.py {wanted.get('scenario')}",
+                        file=sys.stderr,
+                    )
+
         if not finished:
             for _ in range(ticks_per_step):
                 if sim.is_finished or sim.engine.now_ms >= limit_ms:

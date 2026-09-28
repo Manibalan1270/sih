@@ -127,10 +127,17 @@ class TestHeuristic:
                 any_map, start, goal
             )
 
-    def test_heuristic_is_exact_on_a_grid_map(self) -> None:
-        """On a rectilinear grid the Manhattan bound is not merely admissible, it
-        is exact: no route can be shorter and none is longer. This is the property
-        that makes planning cheap enough for 100 robots inside FR-3.5's budget.
+    def test_heuristic_is_admissible_on_a_grid_map(self) -> None:
+        """The Manhattan bound never overestimates, which is what FR-3.2's least-cost
+        guarantee rests on, and stays close enough to guide the search.
+
+        It used to be *exact* on this map: on a two-way rectilinear grid no route can
+        be shorter than the Manhattan distance and none need be longer. One-way
+        aisles break the second half -- a robot that wants to go one aisle west on an
+        eastbound row must go round -- so the bound is now a true lower bound with
+        slack, which is the normal condition for A* and costs only expansions. The
+        test that matters is that it never exceeds the real cost; the one below
+        checks it still prunes.
 
         With the Euclidean bound this was badly loose -- the diagonal is a poor
         estimate of a path forced to follow the aisles -- and A* degenerated to
@@ -141,7 +148,12 @@ class TestHeuristic:
         cols = 24
         for start, goal in ((0, 23), (0, 11 * cols), (10 * cols + 5, 6 * cols + 14)):
             route = astar.route(start, goal)
-            assert graph.straight_line_ms(start, goal) == astar.route_cost(route)
+            bound, actual = graph.straight_line_ms(start, goal), astar.route_cost(route)
+            assert bound <= actual, f"{start}->{goal}: heuristic overestimates"
+            assert actual <= 2 * bound, (
+                f"{start}->{goal}: the one-way detour costs {actual} against a bound "
+                f"of {bound}; the floor's aisle directions are not circulating well"
+            )
 
     def test_heuristic_prunes_the_search_for_typical_queries(self) -> None:
         """A heuristic that guides nothing is a bug no correctness test catches."""
@@ -156,15 +168,18 @@ class TestHeuristic:
                 f"Dijkstra's {blind}; the heuristic is barely guiding the search"
             )
 
-    def test_the_diagonal_worst_case_cannot_be_pruned(self) -> None:
-        """Corner to opposite corner on a uniform grid is the one case where no
-        heuristic can help, and it is worth pinning down so a future reader does
-        not mistake it for a regression.
+    def test_the_diagonal_worst_case_is_bounded_by_the_floor(self) -> None:
+        """Corner to opposite corner is the query with the most equally-good routes,
+        and it is worth pinning down so a future reader does not mistake its cost for
+        a regression.
 
-        Every monotone staircase between opposite corners costs exactly the same,
-        so every node in the enclosing rectangle ties at the optimal f and A* must
-        expand all of them. The heuristic is exact here; the graph simply has an
-        enormous number of equally-optimal routes.
+        On a two-way grid every monotone staircase between opposite corners costs the
+        same, every node in the enclosing rectangle ties at the optimal f, and A* has
+        to expand all of them -- the heuristic is exact and still cannot prune. One-way
+        aisles cut most of those staircases: a row may only be taken one way, so far
+        fewer orderings survive and the search expands a fraction of the rectangle.
+        What is worth holding is the ceiling -- the whole floor and no more -- and that
+        the heuristic still beats a blind search.
         """
         graph = Graph.load("maps/warehouse_zoned_100.json")
         # The far corner of the *floor*, not max(nodes): staging bays are appended
@@ -173,30 +188,18 @@ class TestHeuristic:
         goal = (rows - 1) * cols + (cols - 1)
         astar = AStarPlanner(graph)
         route = astar.route(0, goal)
-        assert graph.straight_line_ms(0, goal) == astar.route_cost(route), (
-            "the heuristic should be exact even in the case it cannot prune"
-        )
-        # Every floor node ties, so every floor node is expanded: the whole rectangle
-        # less the goal itself. The staging bays hang off the perimeter as dead-end
-        # spurs, and those the heuristic *does* prune -- a bay leads away from the goal
-        # -- while a zero heuristic wanders into every one within the cost radius.
-        #
-        # This used to assert equality with the zero-heuristic count, which held only
-        # because the bays were generated on top of floor nodes (see
-        # TestLanesDoNotOverlapWithoutAJunction in test_maps.py). Once the bays sat where
-        # they belong the equality broke in the heuristic's favour.
+        assert route is not None, "opposite corners of a one-way floor must connect"
+        assert graph.straight_line_ms(0, goal) <= astar.route_cost(route)
+        # The floor rectangle plus its perimeter midpoints is the whole of the aisle
+        # network; what the heuristic prunes is every leaf -- a station or a bay leads
+        # away from the goal -- while a blind search wanders into each one inside the
+        # cost radius.
         floor = cols * rows - 1
-        # Perimeter midpoints sit on the rectangle's boundary, so those on a monotone
-        # staircase tie at the optimal f exactly as the floor nodes do; the heuristic
-        # cannot prune them either. What it does prune is every leaf -- stations and
-        # bays -- because a leaf leads away from the goal.
         mids = 2 * (cols - 1) + 2 * (rows - 1)
-        leaves = len(graph.parking_nodes) + len(graph.task_endpoints)
-        assert floor <= astar.stats.expansions <= floor + mids, (
-            f"expected the floor rectangle ({floor}) plus at most its {mids} boundary "
+        assert astar.stats.expansions <= floor + mids, (
+            f"expected at most the floor rectangle ({floor}) plus its {mids} boundary "
             f"midpoints; got {astar.stats.expansions}"
         )
-        assert astar.stats.expansions < floor + mids + leaves, "a leaf was expanded"
         assert _expansions_with_zero_heuristic(graph, 0, goal) >= astar.stats.expansions
 
     def test_grid_maps_use_the_manhattan_bound(self) -> None:
@@ -236,18 +239,34 @@ def _expansions_with_zero_heuristic(graph: Graph, start: int, goal: int) -> int:
     return expansions
 
 
+def ways_into(graph: Graph, node: int) -> set[int]:
+    """Every edge a robot could arrive at ``node`` on, direction honoured.
+
+    Named rather than hard-coded because which edges those are is a property of the
+    map, and the map has changed shape: R_TOP used to be reachable only over the top
+    bypass, and on a dual-carriageway floor it has a return lane climbing to it as
+    well. A literal edge set here passed by describing the old map rather than the
+    condition the test is about.
+    """
+    return {
+        e.id
+        for e in graph.edges.values()
+        if e.v == node or (e.bidirectional and e.u == node)
+    }
+
+
 class TestUnreachable:
     def test_unreachable_goal_returns_none(self, benchmark_map: Graph) -> None:
         """FR-3.7. A normal operating condition on a floor with blocked aisles,
         so it is a return value rather than an exception."""
-        for edge_id in (4, 7, 10):
+        for edge_id in ways_into(benchmark_map, 5):
             benchmark_map.block(edge_id)
         astar = AStarPlanner(benchmark_map)
         assert astar.route(0, 5) is None
         assert astar.stats.unreachable == 1
 
     def test_route_or_raise_names_the_requirement(self, benchmark_map: Graph) -> None:
-        for edge_id in (4, 7, 10):
+        for edge_id in ways_into(benchmark_map, 5):
             benchmark_map.block(edge_id)
         astar = AStarPlanner(benchmark_map)
         with pytest.raises(Unreachable, match="FR-3.7"):
@@ -258,7 +277,7 @@ class TestUnreachable:
     ) -> None:
         """The auction asks for prices, not routes, and must not have to handle an
         exception to discover a task is unbiddable."""
-        for edge_id in (4, 7, 10):
+        for edge_id in ways_into(benchmark_map, 5):
             benchmark_map.block(edge_id)
         astar = AStarPlanner(benchmark_map)
         assert astar.travel_cost(0, 5) == config.INFINITE_COST
@@ -306,7 +325,7 @@ class TestBlockageAndHardBlocks:
         assert 4 not in astar.route_edges(route)
 
     def test_a_hard_block_can_make_a_goal_unreachable(self, benchmark_map: Graph) -> None:
-        blocked = {4, 7, 10}
+        blocked = ways_into(benchmark_map, 5)
 
         def cost(edge_id: int) -> int:
             return (

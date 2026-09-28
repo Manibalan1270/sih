@@ -72,6 +72,17 @@ def plan_precedence(mine: RoutePlan, theirs: RoutePlan) -> bool:
     return outranks(mine.priority, mine.robot_id, theirs.priority, theirs.robot_id)
 
 
+def stands_on(plan: RoutePlan, resource: Resource) -> bool:
+    """Whether ``plan`` opens standing on ``resource``.
+
+    A plan's first step is the ground under the robot when it committed: the berth
+    and spur of the station it is leaving, the stretch of aisle it is already on.
+    That step is a fact about where the robot is, not a choice it made, which is
+    why it is exempt from the commit-order rule below.
+    """
+    return bool(plan.steps) and plan.steps[0].resource == resource
+
+
 def unique_winner(contenders: list[tuple[int, int]]) -> tuple[int, int] | None:
     """The single winner of a conflict set of ``(priority, robot_id)`` pairs.
 
@@ -118,6 +129,17 @@ class Arbiter:
     ) -> bool:
         """Whether this robot's plan stands against ``theirs`` on ``resource``."""
         stands = plan_precedence(mine, theirs)
+        mine_stands_on = stands_on(mine, resource)
+        if mine_stands_on != stands_on(theirs, resource):
+            # One of the two is standing on the contested resource. Commit order
+            # cannot settle that: the robot on it has nowhere else to be, and
+            # telling it to replan produces the same opening hold again, while the
+            # peer keeps a booking that can never come true. Measured as a deadlock
+            # at a depot spur: a robot half out of the berth waited for the junction
+            # while the robot booked into the berth waited at the junction for the
+            # berth. The rule stays antisymmetric -- exactly one of the two sees
+            # itself standing there -- so both reach the same verdict.
+            stands = mine_stands_on
         if stands:
             self.stood += 1
         else:

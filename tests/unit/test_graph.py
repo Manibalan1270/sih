@@ -191,8 +191,20 @@ class TestQueries:
         assert set(benchmark_map.parking_nodes) == {12, 13, 14, 19, 20, 21}
         assert set(benchmark_map.chargers) == set(benchmark_map.parking_nodes)
         # Depots and parking bays are spurs, so they are not arbitration points.
-        spurs = {0, 7, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}  # depots, bays, station spurs
-        assert set(benchmark_map.junctions) == set(benchmark_map.nodes) - spurs
+        # Neither are the bends in a return lane: they carry one lane past a corner
+        # with nothing crossing there, so they are marked not-a-junction too. What
+        # must hold is that a junction is exactly a node where aisles meet.
+        leaves = {n for n in benchmark_map.nodes if benchmark_map.degree(n) == 1}
+        assert leaves == {0, 7, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21}
+        assert leaves.isdisjoint(benchmark_map.junctions), "a dead end decides nothing"
+        # Everything else is a junction, except the bends in a return lane: those
+        # carry one lane round a corner with nothing crossing there, so they are
+        # marked not-a-junction, and a bend has degree two by definition.
+        for node in set(benchmark_map.nodes) - leaves:
+            if node not in benchmark_map.junctions:
+                assert benchmark_map.degree(node) == 2, (
+                    f"node {node} is neither a leaf, a bend nor a junction"
+                )
 
     def test_parking_bays_are_not_task_endpoints(self, benchmark_map: Graph) -> None:
         """Parking on a pickup node simply moves the jam somewhere else."""

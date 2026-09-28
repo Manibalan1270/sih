@@ -1,6 +1,6 @@
 {
   "name": "benchmark_map",
-  "description": "Benchmark warehouse (FR-10.8). Two depot blocks joined by three routes: a short SINGLE-LANE choke corridor C_WEST-C_EAST (20.0 m end to end) and two longer bypasses over the top and bottom of the floor (36.4 m each, 1.82x the choke). Any left-to-right task therefore prefers the choke on nominal costs, which is what forces the path overlap the success criteria require. The two bypasses are deliberately equal in length so route diversity has somewhere symmetric to go once pheromone builds. Six parking spurs (P_A..P_F, one per robot at the 6-AMR stress density) hang off low-traffic junctions and are not task endpoints: an idle AMR withdraws to one so it is not standing on a junction other robots need. Without dedicated bays every idle robot converges on the nearest charger, which is a dead-end spur holding one, and the queue behind it blocks the aisle -- including for robots whose task is at that very node. Charging is at the parking bays, not at the depots. The depots are pickup and drop nodes, and a robot that finished charging on one stood on a task endpoint and blocked the robot whose task was there. Every task endpoint is a degree-1 spur (well-formed per Ma et al. AAMAS 2017): the depots already were, and S_LT/S_LB/S_RT/S_RB hang off the station junctions so a robot resting at a pickup or drop is never in an intersection.",
+  "description": "Benchmark warehouse (FR-10.8). Every aisle on this floor is a single lane, and there are two ways to be one. Most are one-way, laid out as dual carriageways: each leg of the perimeter is a *pair* of single-lane aisles running opposite ways on their own ground -- T_MID east over the top against T_MID_R west, B_MID west along the bottom against B_MID_R east, the west column ascending L_BOT-L_MID-L_TOP against L_WT/L_WB descending, the east column descending R_TOP-R_MID-R_BOT against R_ET/R_EB ascending. Two AMRs never meet head-on on any of them, and neither direction has to wait for the other, which is what keeps the floor's capacity up with no aisle wider than one robot. Cutting across the middle is the C_WEST-C_EAST choke: three two-way single-lane corridor segments, L_MID to R_MID, 20.0 m end to end, capacity one and atomic, enterable from either side but only when no one holds any of it. At 20.0 m against 37.5 m over the top and 39.4 m round the bottom it is what nominal costs prefer -- 1.88x -- which is what forces the path overlap the success criteria require. The bypasses bow further out than the floor strictly needs because a return lane costs a little more than the direct one it parallels, and at the original spread that dogleg was enough to make six of the nine pickup/drop pairs an exact tie between the choke and the long way round (FR-10.9 wants at least 60% of them to prefer the choke) -- and as the only two-way thing on the map it is where every interesting conflict now happens. Each direction still has the choke and two longer bypasses to choose between, so route diversity has somewhere symmetric to go once pheromone builds. Six parking spurs (P_A..P_F, one per robot at the 6-AMR stress density) hang off low-traffic junctions and are not task endpoints: an idle AMR withdraws to one so it is not standing on a junction other robots need. Without dedicated bays every idle robot converges on the nearest charger, which is a dead-end spur holding one, and the queue behind it blocks the aisle -- including for robots whose task is at that very node. Charging is at the parking bays, not at the depots. The depots are pickup and drop nodes, and a robot that finished charging on one stood on a task endpoint and blocked the robot whose task was there. Every task endpoint is a degree-1 spur (well-formed per Ma et al. AAMAS 2017): the depots already were, and S_LT/S_LB/S_RT/S_RB hang off the station junctions so a robot resting at a pickup or drop is never in an intersection. Station spurs stay two-way -- a dead end is left the way it was entered -- and hold one robot at a time, so they are single file too.",
   "nodes": [
     {
       "id": 0,
@@ -66,14 +66,14 @@
       "id": 8,
       "name": "T_MID",
       "x": 16000,
-      "y": 22000,
+      "y": 24000,
       "zone": 0
     },
     {
       "id": 9,
       "name": "B_MID",
       "x": 16000,
-      "y": 2000,
+      "y": 0,
       "zone": 1
     },
     {
@@ -170,7 +170,7 @@
       "id": 20,
       "name": "P_E",
       "x": 16000,
-      "y": 26000,
+      "y": 28000,
       "zone": 0,
       "junction": false,
       "marker": true,
@@ -181,12 +181,66 @@
       "id": 21,
       "name": "P_F",
       "x": 16000,
-      "y": -2000,
+      "y": -4000,
       "zone": 1,
       "junction": false,
       "marker": true,
       "parking": true,
       "charger": true
+    },
+    {
+      "id": 22,
+      "name": "T_MID_R",
+      "x": 16000,
+      "y": 16000,
+      "junction": false,
+      "marker": true,
+      "zone": 1
+    },
+    {
+      "id": 23,
+      "name": "B_MID_R",
+      "x": 16000,
+      "y": 8000,
+      "junction": false,
+      "marker": true,
+      "zone": 1
+    },
+    {
+      "id": 24,
+      "name": "L_WT",
+      "x": 4000,
+      "y": 16000,
+      "junction": false,
+      "marker": true,
+      "zone": 0
+    },
+    {
+      "id": 25,
+      "name": "L_WB",
+      "x": 4000,
+      "y": 8000,
+      "junction": false,
+      "marker": true,
+      "zone": 0
+    },
+    {
+      "id": 26,
+      "name": "R_ET",
+      "x": 28000,
+      "y": 16000,
+      "junction": false,
+      "marker": true,
+      "zone": 1
+    },
+    {
+      "id": 27,
+      "name": "R_EB",
+      "x": 28000,
+      "y": 8000,
+      "junction": false,
+      "marker": true,
+      "zone": 1
     }
   ],
   "edges": [
@@ -198,17 +252,20 @@
     {
       "id": 1,
       "u": 2,
-      "v": 1
+      "v": 1,
+      "bidirectional": false
     },
     {
       "id": 2,
-      "u": 2,
-      "v": 3
+      "u": 3,
+      "v": 2,
+      "bidirectional": false
     },
     {
       "id": 3,
       "u": 2,
-      "v": 10
+      "v": 10,
+      "single_lane": true
     },
     {
       "id": 4,
@@ -219,37 +276,44 @@
     {
       "id": 5,
       "u": 11,
-      "v": 4
+      "v": 4,
+      "single_lane": true
     },
     {
       "id": 6,
       "u": 1,
-      "v": 8
+      "v": 8,
+      "bidirectional": false
     },
     {
       "id": 7,
       "u": 8,
-      "v": 5
+      "v": 5,
+      "bidirectional": false
     },
     {
       "id": 8,
       "u": 5,
-      "v": 4
+      "v": 4,
+      "bidirectional": false
     },
     {
       "id": 9,
-      "u": 3,
-      "v": 9
+      "u": 9,
+      "v": 3,
+      "bidirectional": false
     },
     {
       "id": 10,
-      "u": 9,
-      "v": 6
+      "u": 6,
+      "v": 9,
+      "bidirectional": false
     },
     {
       "id": 11,
-      "u": 6,
-      "v": 4
+      "u": 4,
+      "v": 6,
+      "bidirectional": false
     },
     {
       "id": 12,
@@ -305,6 +369,78 @@
       "id": 22,
       "u": 9,
       "v": 21
+    },
+    {
+      "id": 23,
+      "u": 5,
+      "v": 22,
+      "bidirectional": false
+    },
+    {
+      "id": 24,
+      "u": 22,
+      "v": 1,
+      "bidirectional": false
+    },
+    {
+      "id": 25,
+      "u": 3,
+      "v": 23,
+      "bidirectional": false
+    },
+    {
+      "id": 26,
+      "u": 23,
+      "v": 6,
+      "bidirectional": false
+    },
+    {
+      "id": 27,
+      "u": 1,
+      "v": 24,
+      "bidirectional": false
+    },
+    {
+      "id": 28,
+      "u": 24,
+      "v": 2,
+      "bidirectional": false
+    },
+    {
+      "id": 29,
+      "u": 2,
+      "v": 25,
+      "bidirectional": false
+    },
+    {
+      "id": 30,
+      "u": 25,
+      "v": 3,
+      "bidirectional": false
+    },
+    {
+      "id": 31,
+      "u": 4,
+      "v": 26,
+      "bidirectional": false
+    },
+    {
+      "id": 32,
+      "u": 26,
+      "v": 5,
+      "bidirectional": false
+    },
+    {
+      "id": 33,
+      "u": 6,
+      "v": 27,
+      "bidirectional": false
+    },
+    {
+      "id": 34,
+      "u": 27,
+      "v": 4,
+      "bidirectional": false
     }
   ],
   "choke_edge": 4,

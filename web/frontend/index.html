@@ -6,8 +6,9 @@
 <title>ROBOTON — fleet overview</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
 </head>
 <body class="app">
 
@@ -24,6 +25,7 @@
   <div class="rail-foot">
     <span class="lamp" id="lamp" data-state="idle"></span>
     <span class="rail-foot-label" id="lamp-label">no run</span>
+    <button type="button" class="theme-toggle" id="theme-toggle"></button>
   </div>
 </nav>
 
@@ -108,6 +110,14 @@
           <span>Scenario</span>
           <select id="scenario" name="scenario"></select>
         </label>
+        <label class="field">
+          <span>Algorithm</span>
+          <select id="config" name="config">
+            <option value="B" selected>B — ROBOTON (reservation + precedence)</option>
+            <option value="A">A — stop-and-wait baseline</option>
+          </select>
+          <span class="field-hint" id="config-hint"></span>
+        </label>
         <div class="form-row">
           <label class="field">
             <span>Seed</span>
@@ -137,6 +147,49 @@
           <button type="button" id="pause" class="btn" disabled>Pause</button>
         </div>
       </form>
+    </section>
+
+    <section class="col-12 card" id="benchmark-card">
+      <p class="card-label">Benchmark — stop-and-wait against ROBOTON</p>
+      <p class="bench-intro">
+        Both configurations run the same scenario, the same seeds and therefore the
+        same task sets; the only difference between the two columns is the
+        coordination. Configuration A is not a crippled B — it is the same robot
+        built with no auctioneer and no arbiter, so what is measured is coordination
+        rather than two codebases.
+      </p>
+      <form id="bench-form" class="form-row" autocomplete="off">
+        <label class="field">
+          <span>Scenario</span>
+          <select id="bench-scenario" name="scenario"></select>
+        </label>
+        <label class="field">
+          <span>Seeds</span>
+          <input id="bench-seeds" name="seeds" type="number" min="1" max="20" value="5">
+        </label>
+        <label class="field">
+          <span>AMRs</span>
+          <input id="bench-robots" name="robots" type="number" min="1" placeholder="default">
+        </label>
+        <button type="submit" id="bench-start" class="btn primary">Run benchmark</button>
+        <span class="bench-progress" id="bench-progress"></span>
+      </form>
+
+      <div id="bench-result" hidden>
+        <div class="bench-headline" id="bench-headline"></div>
+        <table id="bench-table">
+          <thead>
+            <tr>
+              <th style="width: 34%">Measure</th>
+              <th style="width: 22%">A — stop-and-wait</th>
+              <th style="width: 22%">B — ROBOTON</th>
+              <th style="width: 22%">Difference</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="bench-note" id="bench-note"></p>
+      </div>
     </section>
   </div>
 </main>

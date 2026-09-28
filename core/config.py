@@ -119,6 +119,42 @@ entry is gated by order, not time, so lateness is safe for it -- but a timetable
 in the past misleads every peer planning around it, and a fresh plan against the
 current table also routes around what has built up meanwhile."""
 
+MAX_PLAN_NODES = 57
+"""How many nodes a route plan may name.
+
+PATH carries one entry per node and must fit one frame (CON-2's 250 bytes), which
+at 16-bit ids leaves room for 57 -- see ``communication.messages.max_path_nodes``,
+which asserts the two agree. The planner honours it rather than letting the codec
+raise: a route longer than a frame is a routing decision to remake, not a crash on
+the safety path, and it is reachable now that one-way aisles make a robot go round
+where it used to go straight. The longest nominal endpoint-to-endpoint route on the
+100-AMR floor is 54 nodes; the margin is for the detours a booked floor forces.
+
+A robot that cannot reach its goal inside the budget gets no plan and tries again
+next tick, by which time the floor has moved.
+"""
+
+PLAN_BACKDATE_LIMIT_MS = 600_000
+"""How far into the past a plan's opening hold may reach.
+
+A robot standing on a resource holds it from the moment it arrived, and a replan
+carries that moment forward unchanged -- its place in every queue is that time, and
+letting it creep towards now would move the robot up the order past peers who have
+been waiting for it (``resting_plan``, ``Robot._start_for_plan``).
+
+It cannot reach back for ever, because PATH carries each time as a signed tick
+offset from the frame -- +-32767 ticks of MOTION_TICK_MS, about +-655 s. A hold
+older than that saturates at the encoder, so the plan a peer rebuilds says the
+robot arrived *later* than it did, and precedence inverts: on a stalled
+six-AMR run a robot that had been standing on a spur for thirteen minutes was
+read as the junior of the robot waiting for it, which drove in and hit it.
+
+Ten minutes, comfortably inside the wire's range with a minute to spare for the
+frame-timestamp skew. Holds are floored here at plan time rather than clamped at
+the encoder, so what a robot believes and what it broadcasts are the same plan --
+which is the property ``TestWireForm`` checks. Past this the order simply cannot
+be communicated, and every robot floors identically off an aligned clock."""
+
 HOLD_LINE_MM = 300
 """How far outside a resource boundary a robot stops when it may not yet enter.
 

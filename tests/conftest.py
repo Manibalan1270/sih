@@ -136,3 +136,25 @@ def to_networkx(graph: Graph):
         if edge.bidirectional:
             reference.add_edge(edge.v, edge.u, weight=edge.nominal_cost_ms)
     return reference
+
+
+BENCHMARK_MIDLINE_MM = 16000
+"""The benchmark floor's north-south midline: the choke's middle, the bypass mid
+nodes, and nothing else sits on it."""
+
+
+def sever_the_right_half(graph: Graph) -> list[int]:
+    """Block every aisle crossing the benchmark floor's midline, isolating the two
+    halves. Returns the edges blocked.
+
+    Several tests need a goal that genuinely cannot be reached -- FR-3.7's return
+    value, an unbiddable task, a robot that must hand work back rather than spin.
+    They used to name three edge ids. That described one version of the map rather
+    than the condition, and both times the floor gained an aisle the tests passed
+    while reaching the goal by the new route.
+    """
+    left = lambda node: graph.node(node).x_mm < BENCHMARK_MIDLINE_MM
+    crossing = [e.id for e in graph.edges.values() if left(e.u) != left(e.v)]
+    for edge_id in crossing:
+        graph.block(edge_id)
+    return crossing
