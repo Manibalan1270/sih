@@ -61,6 +61,28 @@ class TestSnapshot:
         assert {n["id"] for n in payload["nodes"] if n["drop"]} == set(raw["drop_nodes"])
         assert sum(e["choke"] for e in payload["edges"]) == 1
 
+    def test_every_consignment_on_board_is_reported(self, sim) -> None:
+        """The views take cartons off the shelf by ``carrying``, so it has to name
+        every collected order a robot holds -- not just its queue head's."""
+        from core.task import Leg
+
+        frame = telemetry.snapshot(sim)
+        by_id = {r.robot_id: r for r in sim.engine.robots}
+        for shown in frame["robots"]:
+            robot = by_id[shown["id"]]
+            assert shown["carrying"] == [t.task_id for t in robot.queue.tasks if t.leg is Leg.TO_DROP]
+
+    def test_the_map_carries_the_racks_and_their_pick_faces(self) -> None:
+        """The plan and the 3D floor draw racks from the payload, and every pickup
+        on a warehouse map collects from the face of one of them."""
+        run = scenario_module.build(scenarios.get("visual30"), seed=1)
+        payload = telemetry.map_payload(run)
+        faces = {n["id"] for n in payload["nodes"] if n["pick_face"]}
+        assert faces == set(run.graph.pickup_nodes)
+        assert {f["node"] for r in payload["racks"] for f in r["faces"]} == faces
+        grid = json.loads(run.scenario.map_path.read_text(encoding="utf-8"))["grid"]
+        assert len(payload["racks"]) == (grid["cols"] - 1) * (grid["rows"] - 1)
+
     def test_a_frame_is_json_serialisable(self, sim) -> None:
         json.dumps(telemetry.snapshot(sim))
         json.dumps(telemetry.map_payload(sim))
@@ -225,6 +247,23 @@ def test_run_request_defaults_match_the_cli() -> None:
     request = RunRequest()
     assert (request.scenario, request.seed, request.waves) == ("bench3", 1, 4)
     assert request.config == "B", "Run Control defaults to the coordinated fleet"
+
+
+def test_the_3d_floor_loads_without_the_internet() -> None:
+    """The live floor's 3D view runs on a vendored Three.js, so a demo floor with
+    no connection still has it. The page's import map has to name files the
+    server actually serves, or the 3D view fails only in the browser."""
+    with TestClient(app) as client:
+        page = client.get("/simulation").text
+        assert '"three": "/static/vendor/three/three.module.js"' in page
+        assert '"three/addons/": "/static/vendor/three/addons/"' in page
+        for path in (
+            "/static/floor3d.js",
+            "/static/vendor/three/three.module.js",
+            "/static/vendor/three/three.core.js",  # three.module.js imports it
+            "/static/vendor/three/addons/controls/OrbitControls.js",
+        ):
+            assert client.get(path).status_code == 200, path
 
 
 class TestExternalSource:

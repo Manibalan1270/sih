@@ -71,29 +71,27 @@ def build_grid(
     col_bands: int,
     row_bands: int,
     bays: int = 0,
+    pick_every: int = 2,
+    pick_on: tuple[int, ...] = (0,),
 ) -> dict:
     """Build a warehouse grid map as a JSON-ready dict.
 
     Nodes sit at aisle intersections. Horizontal edges are cross-aisles, vertical
-    edges are pick-aisles, and **every one of them is a single lane travelled in one
-    direction only** -- the layout Kiva-style floors actually use.
+    edges are pick-aisles, and **every one of them is a single lane, driven either
+    way**: an exclusive corridor (``single_lane``), one robot at a time from one
+    junction to the next. No aisle is wide enough for two AMRs abreast, and none
+    has a direction -- a robot takes the shortest way and waits its turn at the
+    corridor's mouth when someone is coming the other way. ``core.timewindows``
+    books each junction-to-junction stretch as one resource, which is what makes a
+    head-on impossible: two robots never hold the same stretch at once.
 
-    The orientation is not a free choice; a one-way grid is easy to make unreachable.
-    Alternating every row and every column (the textbook Manhattan grid) puts a sink
-    at one corner and a source at the opposite one: at ``(cols-1, 0)`` an eastbound
-    top row and a southbound last column both point off the floor, so a robot that
-    drives in can never drive out. So the perimeter is laid out as a single directed
-    cycle -- top row east, last column north, bottom row west, first column south --
-    and only the interior aisles alternate. Every interior aisle then begins and ends
-    on that cycle, which makes the map strongly connected: leave any node along its
-    row or column to reach the ring, and enter any node by joining its column or row
-    where that aisle meets the ring. ``Graph.is_connected`` checks this both ways
-    round, and ``write_map`` fails the build if it does not hold.
-
-    One-way is what buys collision freedom cheaply. An aisle that cannot carry
-    opposing traffic cannot produce a head-on, and the lane resource in
-    ``core.timewindows`` is FIFO, so robots on one still follow each other nose to
-    tail rather than serialising one at a time the way an exclusive corridor does.
+    Consignments are collected in the aisle itself. A pickup is a plain node at the
+    midpoint of an interior pick-aisle segment, beside the shelving it is collected
+    from -- no spur, no alcove, nothing cut into a rack. The segments chosen are
+    those with ``(row + col) % pick_every`` in ``pick_on``: a diagonal spread, so no
+    stretch of the floor is all pickups and none is without. A robot collecting
+    there holds its stretch of aisle while it does, and traffic for that stretch
+    goes round by the next pick-aisle or waits at the junction.
     """
     if cols % col_bands or rows % row_bands:
         raise ValueError(
@@ -128,11 +126,11 @@ def build_grid(
 
     edges = []
 
-    def add_edge(u: int, v: int, *, one_way: bool = True) -> None:
-        """``u -> v`` is the direction of travel when ``one_way``."""
+    def add_edge(u: int, v: int, *, aisle: bool = True) -> None:
+        """An aisle is a two-way single-lane corridor; a spur is a station's own."""
         entry: dict[str, object] = {"id": len(edges), "u": u, "v": v}
-        if one_way:
-            entry["bidirectional"] = False
+        if aisle:
+            entry["single_lane"] = True
         edges.append(entry)
 
     # Perimeter edges are split at their midpoint. Every station and every bay must be
@@ -144,11 +142,11 @@ def build_grid(
     # (top and bottom) or 2500 mm (sides) apart, clear of the lane-overlap floor.
     mid_of: dict[tuple[int, int], int] = {}
 
-    def add_mid(a: int, b: int) -> int:
+    def add_mid(a: int, b: int, name: str | None = None) -> int:
         na, nb = nodes[a], nodes[b]
         mid = {
             "id": len(nodes),
-            "name": f"M{a:03d}_{b:03d}",
+            "name": name or f"M{a:03d}_{b:03d}",
             "x": (na["x"] + nb["x"]) // 2,
             "y": (na["y"] + nb["y"]) // 2,
             "marker": True,
@@ -159,65 +157,49 @@ def build_grid(
         mid_of[(a, b)] = mid["id"]
         return mid["id"]
 
-    def add_aisle(u: int, v: int, *, split: bool, forward: bool) -> None:
-        """One aisle from ``u`` to ``v``, travelled ``u -> v`` when ``forward``.
-
-        A split aisle is two segments either side of a midpoint, and both carry the
-        aisle's direction -- a midpoint is a bend in the lane, not a place to turn
-        round. The midpoint is always created under the caller's ``(u, v)`` order so
-        the ring walk below can find it whichever way the traffic runs.
-        """
+    def add_aisle(u: int, v: int, *, split: bool, name: str | None = None) -> int | None:
+        """One aisle from ``u`` to ``v``; split, two segments either side of a
+        midpoint, which is returned. A midpoint is a bend in the corridor, or a
+        pickup on it -- not a junction, unless a spur is hung off it later."""
         if not split:
-            add_edge(u, v) if forward else add_edge(v, u)
-            return
-        m = add_mid(u, v)
-        if forward:
-            add_edge(u, m)
-            add_edge(m, v)
-        else:
-            add_edge(v, m)
-            add_edge(m, u)
-
-    # Perimeter as a directed cycle, interior aisles alternating. See the docstring:
-    # alternating the perimeter too would strand the corners.
-    def cross_aisle_runs_east(row: int) -> bool:
-        if row == 0:
-            return True  # top of the ring
-        if row == rows - 1:
-            return False  # bottom of the ring, returning west
-        return row % 2 == 0
-
-    def pick_aisle_runs_up(col: int) -> bool:
-        if col == cols - 1:
-            return True  # right side of the ring, climbing
-        if col == 0:
-            return False  # left side, descending
-        return col % 2 == 0
+            add_edge(u, v)
+            return None
+        m = add_mid(u, v, name)
+        add_edge(u, m)
+        add_edge(m, v)
+        return m
 
     for row in range(rows):  # cross-aisles
         for col in range(cols - 1):
-            add_aisle(
-                node_id(col, row), node_id(col + 1, row),
-                split=row in (0, rows - 1),
-                forward=cross_aisle_runs_east(row),
-            )
+            add_aisle(node_id(col, row), node_id(col + 1, row), split=row in (0, rows - 1))
+    # Pickups sit at interior pick-aisle midpoints; one segment, one pickup.
+    pick_segments = sorted(
+        (col, row)
+        for col in range(1, cols - 1)
+        for row in range(rows - 1)
+        if (row + col) % pick_every in pick_on
+    )
+    pickups: list[int] = []
     for col in range(cols):  # pick-aisles
         for row in range(rows - 1):
-            add_aisle(
+            picking = (col, row) in pick_segments
+            mid = add_aisle(
                 node_id(col, row), node_id(col, row + 1),
-                split=col in (0, cols - 1),
-                forward=pick_aisle_runs_up(col),
+                split=col in (0, cols - 1) or picking,
+                name=f"PICK{col:02d}{row:02d}" if picking else None,
             )
+            if picking:
+                assert mid is not None
+                pickups.append(mid)
 
-    # ---- stations and bays: leaves off the perimeter ring ----------------------
+    # ---- drop stations and bays: leaves ---------------------------------------
     #
-    # A Kiva-style floor. The grid is the aisle network; nothing a robot must *stop*
-    # for is on it. Pickup stations hang off the left column (the inbound dock), drop
-    # stations off the right (packing), each a degree-1 spur pointing away from the
-    # floor. That is the well-formedness condition of Ma, Li, Kumar and Koenig (AAMAS
-    # 2017): between any two endpoints there is a route crossing no third, because a
-    # leaf cannot be crossed. Before this every station was a 3- or 4-way junction and
-    # a robot at a pickup was parked in an intersection -- SRS defect 13.
+    # Consignments are collected in the pick-aisles (above) and taken to drop
+    # stations off the right of the ring (packing), each a degree-1 spur. No endpoint
+    # is a junction -- a robot collecting is parked mid-aisle, never in an
+    # intersection (SRS defect 13) -- and between any two endpoints there is a route
+    # crossing no third, the well-formedness condition of Ma, Li, Kumar and Koenig
+    # (AAMAS 2017): every pick-aisle segment has a parallel one a column over.
     #
     # Bays take the rest of the ring: top and bottom rows and the side midpoints. One
     # per robot, each its own leaf, chargers here, never a task endpoint (defect 6).
@@ -247,12 +229,11 @@ def build_grid(
         }
         nodes.append(spur)
         a["junction"] = True  # something now turns off here
-        # Spurs stay two-way: a dead end has to be left the way it was entered, and
-        # the station resource admits one robot at a time so nothing meets there.
-        add_edge(anchor, spur["id"], one_way=False)
+        # The station resource admits one robot at a time, spur and berth, so
+        # nothing meets on a spur however it is flagged.
+        add_edge(anchor, spur["id"], aisle=False)
         return spur["id"]
 
-    pickups = [add_spur(node_id(0, row), f"PICK{row:02d}") for row in range(rows)]
     drops = [add_spur(node_id(cols - 1, row), f"DROP{row:02d}") for row in range(rows)]
 
     # Bay anchors, walked round the ring so the chosen subset is spread out rather
@@ -286,7 +267,7 @@ def build_grid(
         "zone_bands": {"cols": col_bands, "rows": row_bands},
         "nodes": nodes,
         "edges": edges,
-        "one_way_aisles": True,
+        "single_lane_aisles": True,
         "pickup_nodes": pickups,
         "drop_nodes": drops,
     }
@@ -296,17 +277,20 @@ WAREHOUSE_30 = dict(
     name="warehouse_zoned_30",
     description=(
         "Zoned warehouse for the 30-AMR visual scenario. 12x6 grid of aisle "
-        "intersections (44 m x 25 m), partitioned into 6 zones as 3 column "
-        "bands x 2 row bands. Every aisle is a single lane travelled one way: the "
-        "perimeter circulates as a directed ring and the interior rows and columns "
-        "alternate, so no two robots ever meet head-on and contention is confined "
-        "to the junctions between them. Fits 8-bit node and edge ids."
+        "intersections (66 m x 30 m), partitioned into 6 zones as 3 column "
+        "bands x 2 row bands. Every aisle is a single lane driven either way, one "
+        "AMR at a time from junction to junction, so no two robots ever meet "
+        "head-on or pass abreast. Consignments are collected in the aisle itself, "
+        "at a pickup midway along every interior pick-aisle segment (50), and "
+        "dropped at stations off the right of the floor. Fits 8-bit node and edge ids."
     ),
     cols=12,
     rows=6,
     col_bands=3,
     row_bands=2,
     bays=30,
+    pick_every=1,
+    pick_on=(0,),
 )
 
 WAREHOUSE_100 = dict(
@@ -314,10 +298,11 @@ WAREHOUSE_100 = dict(
     description=(
         "Zoned warehouse for the 100-AMR scale scenario. 24x12 grid of aisle "
         "intersections (138 m x 66 m), partitioned into 24 zones as 6 column "
-        "bands x 4 row bands. Every aisle is a single lane travelled one way, on "
-        "the same directed-perimeter layout as the 30-AMR floor. Requires 16-bit "
-        "ids (540 edges exceeds the 8-bit ceiling of 255). Zone count is set by "
-        "the NFR-1.12 frame budget under FR-9.3 adjacent-zone eligibility -- see "
+        "bands x 4 row bands. Every aisle is a single lane driven either way, as "
+        "on the 30-AMR floor, with consignments collected in the aisle at 121 "
+        "pickups along the pick-aisles. Requires 16-bit ids (its "
+        "edges exceed the 8-bit ceiling of 255). Zone count is set by the NFR-1.12 "
+        "frame budget under FR-9.3 adjacent-zone eligibility -- see "
         "ZONE_BUDGET_NOTE in scripts/generate_maps.py."
     ),
     cols=24,
@@ -325,6 +310,8 @@ WAREHOUSE_100 = dict(
     col_bands=6,
     row_bands=4,
     bays=100,
+    pick_every=2,
+    pick_on=(0,),
 )
 
 
@@ -353,7 +340,7 @@ def write_map(spec: dict) -> Path:
         )
     print(
         f"{data['name']:22s} {len(graph.nodes):3d} nodes  {len(graph.edges):3d} edges  "
-        f"{len(graph.one_way_edges):3d} one-way  {len(spurs):3d} spurs  "
+        f"{len(graph.single_lane_edges):3d} single-lane  {len(spurs):3d} spurs  "
         f"{zones.zone_count:2d} zones  ids={'16' if wide else '8':>2s}b"
     )
     print(

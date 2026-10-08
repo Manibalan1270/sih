@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import re
 import sys
 from pathlib import Path
 
@@ -28,6 +27,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from core import config, scenarios  # noqa: E402
 from core.graph import Graph  # noqa: E402
+from simulator import racks  # noqa: E402
 from simulator.engine import spawn_positions  # noqa: E402
 
 WORLDS_DIR = REPO_ROOT / "webots" / "worlds"
@@ -37,10 +37,10 @@ MM = 0.001
 LANE_WIDTH_M = (2 * config.AISLE_LANE_OFFSET_MM + 800) * MM
 SINGLE_LANE_WIDTH_M = 1.4
 STATION_PAD_M = 1.4
+AISLE_PAD_M = 0.9
 ROBOT_RADIUS_M = config.ROBOT_RADIUS_MM * MM
 ROBOT_HEIGHT_M = 0.45
 RACK_HEIGHT_M = 1.6
-RACK_INSET_M = LANE_WIDTH_M / 2 + 0.3
 # Floor markings are a few centimetres proud of the slab: at the viewing
 # distances of a 60 m warehouse the depth buffer cannot separate millimetres.
 LANE_THICK, LANE_Z = 0.03, 0.015
@@ -57,8 +57,6 @@ DROP = (0.84, 0.42, 0.63)
 BAY = (0.42, 0.47, 0.53)
 CHARGER = (0.48, 0.79, 0.44)
 ROBOT_IDLE = (0.42, 0.48, 0.58)
-
-_GRID_NAME = re.compile(r"^C\d+R\d+$")
 
 
 def _look_from_south(pitch: float) -> str:
@@ -145,31 +143,22 @@ def _robot(robot_id: int, x: float, y: float) -> str:
     )
 
 
-def _racks(graph: Graph, raw: dict) -> list[str]:
-    """Storage blocks in every grid cell no node touches -- the Kiva pods."""
-    if "grid" not in raw:
-        return []
-    # The aisle grid is the nodes the generator named CxxRyy; ring midpoints and
-    # spurs would otherwise slice the cells into slivers.
-    grid = [n for n in graph.nodes.values() if _GRID_NAME.match(n.name)]
-    xs = sorted({n.x_mm for n in grid})
-    ys = sorted({n.y_mm for n in grid})
+def _racks(graph: Graph) -> list[str]:
+    """Storage blocks where simulator/racks.py puts them -- the Kiva pods -- each one
+    solid box. Pickups are in the aisles beside them; nothing is cut into a rack."""
     out = []
-    for i in range(len(xs) - 1):
-        for j in range(len(ys) - 1):
-            x0, x1, y0, y1 = xs[i], xs[i + 1], ys[j], ys[j + 1]
-            if any(x0 < n.x_mm < x1 and y0 < n.y_mm < y1 for n in graph.nodes.values()):
-                continue
-            sx = (x1 - x0) * MM - 2 * RACK_INSET_M
-            sy = (y1 - y0) * MM - 2 * RACK_INSET_M
-            if sx < 0.6 or sy < 0.6:
-                continue
-            out.append(
-                _box(
-                    (x0 + x1) / 2 * MM, (y0 + y1) / 2 * MM, RACK_HEIGHT_M / 2,
-                    sx, sy, RACK_HEIGHT_M, RACK, name=f"rack_{i}_{j}",
-                )
-            )
+    for index, rack in enumerate(racks.racks(graph)):
+        cx, cy = (rack.x0 + rack.x1) / 2, (rack.y0 + rack.y1) / 2
+        out.append(
+            "Solid {\n"
+            f"  translation {_f(cx * MM)} {_f(cy * MM)} {_f(RACK_HEIGHT_M / 2)}\n"
+            "  children [ Shape {\n"
+            f"    appearance PBRAppearance {{ baseColor {_rgb(RACK)} roughness 0.9 metalness 0 }}\n"
+            f"    geometry Box {{ size {_f((rack.x1 - rack.x0) * MM)} {_f((rack.y1 - rack.y0) * MM)} {_f(RACK_HEIGHT_M)} }}\n"
+            "  } ]\n"
+            f"  name \"rack_{index}\"\n"
+            "}\n"
+        )
     return out
 
 
@@ -178,6 +167,7 @@ def build_world(scenario: scenarios.Scenario, *, seed: int, robots: int | None =
     graph = Graph.from_dict(raw)
     count = robots or scenario.simulated_robots
     pickups, drops = set(raw.get("pickup_nodes", ())), set(raw.get("drop_nodes", ()))
+    faces = racks.pick_faces(graph)
     choke = raw.get("choke_edge")
 
     xs = [n.x_mm for n in graph.nodes.values()]
@@ -238,12 +228,15 @@ def build_world(scenario: scenarios.Scenario, *, seed: int, robots: int | None =
                 _box(node.x_mm * MM, node.y_mm * MM, LANE_Z, LANE_WIDTH_M, LANE_WIDTH_M, LANE_THICK, LANE, name=f"junction_{node.id}")
             )
 
-    parts.extend(_racks(graph, raw))
+    parts.extend(_racks(graph))
 
     for node in graph.nodes.values():
         x, y = node.x_mm * MM, node.y_mm * MM
         if node.id in pickups:
-            parts.append(_box(x, y, PAD_Z, STATION_PAD_M, STATION_PAD_M, PAD_THICK, PICKUP, name=f"pickup_{node.name}"))
+            # A pickup in the aisle gets a pad no wider than the single lane; a
+            # station off the ring has room for more.
+            pad = AISLE_PAD_M if node.id in faces else STATION_PAD_M
+            parts.append(_box(x, y, PAD_Z, pad, pad, PAD_THICK, PICKUP, name=f"pickup_{node.name}"))
         elif node.id in drops:
             parts.append(_box(x, y, PAD_Z, STATION_PAD_M, STATION_PAD_M, PAD_THICK, DROP, name=f"drop_{node.name}"))
         elif node.is_parking:

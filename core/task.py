@@ -262,10 +262,14 @@ class TaskQueue:
         self.tasks.append(task)
 
     def insert(self, index: int, task: Task) -> None:
-        """Insert at a chosen point, which is what the auction bid priced."""
+        """Insert at a chosen point, which is what the auction bid priced.
+
+        Clamped behind any order already on board: the bid may have been priced
+        before the head was collected, and the deck holds one carton.
+        """
         if self.is_full:
             raise ValueError(f"queue full (cap {self.capacity})")
-        self.tasks.insert(index, task)
+        self.tasks.insert(max(index, self.on_board), task)
 
     def pop_current(self) -> Task | None:
         return self.tasks.pop(0) if self.tasks else None
@@ -279,6 +283,21 @@ class TaskQueue:
     def holds(self, task_id: int) -> bool:
         return any(t.task_id == task_id for t in self.tasks)
 
+    @property
+    def on_board(self) -> int:
+        """How many leading tasks are already collected and riding the deck."""
+        count = 0
+        for task in self.tasks:
+            if task.leg is not Leg.TO_DROP:
+                break
+            count += 1
+        return count
+
     def insertion_points(self) -> range:
-        """Positions a new task could occupy, for insertion-cost enumeration."""
-        return range(len(self.tasks) + 1)
+        """Positions a new task could occupy, for insertion-cost enumeration.
+
+        Never ahead of an order already collected. An AMR carries one carton, so
+        detouring to a second pickup with the first still on the deck means
+        rolling up to a drop and leaving again with a box aboard.
+        """
+        return range(self.on_board, len(self.tasks) + 1)

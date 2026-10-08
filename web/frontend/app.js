@@ -6,6 +6,7 @@
 
   const layers = {
     zones: $("layer-zones"),
+    racks: $("layer-racks"),
     lanes: $("layer-lanes"),
     nodes: $("layer-nodes"),
     routes: $("layer-routes"),
@@ -40,6 +41,25 @@
   let lastHeading = new Map();
   let lastRobots = [];          // the frame on screen, so a click can redraw
   let lastPathKey = "";         // rebuild the inspector's hop list only on change
+  let faceEls = new Map();      // pick-face node -> its pad on the plan
+  let lastConsignments = [];    // the orders announced so far, for a 3D view opened late
+
+  // The floor can be drawn as the plan, in 3D, or both. The 3D renderer is a
+  // module of its own, imported the first time 3D or Split is chosen, so a
+  // reader who never leaves the plan never downloads Three.js.
+  const VIEWS = ["2d", "3d", "split"];
+  const VIEW_KEY = "roboton-floor-view";
+  const viewButtons = [...document.querySelectorAll(".view-switch [data-view]")];
+  let view = "2d";
+  let view3d = null;
+  let loading3d = null;
+
+  // Where the 3D camera is: framing the floor ("overview"), straight down
+  // ("top"), or riding the selected AMR -- behind it ("chase") or from its
+  // front ("pov"). Clicking an AMR while the 3D view is showing starts a ride.
+  const RIDING = new Set(["chase", "pov"]);
+  const perspectiveButtons = [...document.querySelectorAll(".perspective [data-perspective]")];
+  let perspective = "overview";
 
   // ---- helpers ------------------------------------------------------------
 
@@ -54,6 +74,7 @@
     while (node.firstChild) node.removeChild(node.firstChild);
   }
 
+  // ``rect`` less ``hole``, both [x0, y0, x1, y1], as up to four pieces.
   // A one-way aisle is drawn with chevrons along it, spaced so a long aisle gets
   // several and a short spur-length one still gets its single arrow. Which way an
   // aisle runs is the map's most consequential property now, so it is on the
@@ -121,6 +142,8 @@
     insp.card.hidden = true;
     lastRobots = [];
     lastPathKey = "";
+    faceEls = new Map();
+    lastConsignments = [];
 
     const xs = data.nodes.map((n) => n.x);
     const ys = data.nodes.map((n) => n.y);
@@ -150,6 +173,12 @@
       }
     }
 
+    // Racks, where the map has them (simulator/racks.py): the shelving between
+    // the aisles, whole -- pickups are in the aisles, collected from a rack's face.
+    for (const r of data.racks || []) {
+      el("rect", { class: "rack", x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0 }, layers.racks);
+    }
+
     // Lanes: a band of concrete. Every aisle on these maps is a single lane, and
     // the drawing says which kind -- hazard hatching along a two-way corridor,
     // where robots meet one at a time, and a chevron along a one-way aisle showing
@@ -173,7 +202,14 @@
     // Nodes: junction dots, marker rings, and stations drawn as floor squares.
     for (const n of data.nodes) {
       const isStation = n.pickup || n.drop || n.parking || n.charger;
-      if (isStation) {
+      if (n.pick_face) {
+        // A pickup in the aisle: a small pad where the AMR stops beside the rack,
+        // unlabelled -- there are dozens, and the rack says where it is. Lit while
+        // an order waits there.
+        faceEls.set(n.id, el("rect", {
+          class: "station pickup face", x: n.x - 450, y: n.y - 450, width: 900, height: 900,
+        }, layers.nodes));
+      } else if (isStation) {
         const cls = ["station", n.pickup ? "pickup" : "", n.drop ? "drop" : "",
           n.parking ? "parking" : ""].join(" ").trim();
         el("rect", { class: cls, x: n.x - 700, y: n.y - 700, width: 1400, height: 1400 }, layers.nodes);
@@ -193,6 +229,9 @@
     }
 
     $("empty").hidden = true;
+    if (view3d) view3d.setMap(data);
+    if (RIDING.has(perspective)) perspective = "overview";   // the new floor has no one to ride yet
+    syncPerspective();
   }
 
   // ---- robots -------------------------------------------------------------
@@ -250,6 +289,7 @@
     let heading = r.heading;
     if (heading < 0) heading = lastHeading.get(r.id) ?? 0;
     lastHeading.set(r.id, heading);
+    entry.pose = { x, y, heading };   // the 3D view draws the body exactly here
 
     entry.g.setAttribute("transform", `translate(${x} ${y})`);
     entry.heading.setAttribute("transform", `rotate(${heading})`);
@@ -284,35 +324,50 @@
     if (selected === null) return;
     const r = robots.find((q) => q.id === selected);
     if (!r || !r.route.length) return;
-    const points = [`${r.x},${r.y}`];
-    for (const id of r.route) {
+    el("polyline", {
+      class: "route", points: routeAhead(r).map(([x, y]) => `${x},${y}`).join(" "),
+    }, layers.routes);
+  }
+
+  // From where the robot is now through every node still ahead of it. route[0]
+  // is the node it last left (or the one it stands on), so it is skipped:
+  // drawing it would trail the line back behind the robot.
+  function routeAhead(r) {
+    const points = [[r.x, r.y]];
+    for (const id of r.route.slice(1)) {
       const n = nodesById.get(id);
-      if (n) points.push(`${n.x},${n.y}`);
+      if (n) points.push([n.x, n.y]);
     }
-    el("polyline", { class: "route", points: points.join(" ") }, layers.routes);
+    return points;
   }
 
   function routeRemainingMm(r) {
-    // Walk the polyline the route layer draws: from where the robot is now,
-    // through every node still ahead of it.
-    let total = 0, px = r.x, py = r.y;
-    for (const id of r.route.slice(1)) {
-      const n = nodesById.get(id);
-      if (!n) break;
-      total += Math.hypot(n.x - px, n.y - py);
-      px = n.x; py = n.y;
+    // The length of the polyline the route layer draws.
+    const points = routeAhead(r);
+    let total = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      total += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
     }
     return total;
   }
 
-  function placeInspector(x, y) {
+  // Where an AMR is on screen, in client pixels. The card rides the plan
+  // whenever the plan is showing, and the 3D body only when it is not.
+  function anchorOf(id, x, y) {
+    if (view === "3d") return view3d ? view3d.screenOf(id) : null;
     // Floor coordinates are millimetres in the SVG's viewBox; the card is an
     // HTML overlay, so the CTM is what puts the two in the same place.
     const ctm = svg.getScreenCTM();
-    if (!ctm) return;
+    if (!ctm) return null;
     const pt = svg.createSVGPoint();
     pt.x = x; pt.y = y;
-    const at = pt.matrixTransform(ctm);
+    return pt.matrixTransform(ctm);
+  }
+
+  function placeInspector(at) {
+    // Docked while riding an AMR: the robot is always mid-screen then, and a
+    // card beside it would sit across the road ahead.
+    if (!at || insp.card.classList.contains("docked")) return;
     const rect = floor.getBoundingClientRect();
     const card = insp.card;
     const w = card.offsetWidth, h = card.offsetHeight;
@@ -384,7 +439,14 @@
     }
 
     const [ox, oy] = laneOffset(r);   // anchor on the drawn body, not the centre line
-    placeInspector(r.x + ox, r.y + oy);
+    placeInspector(anchorOf(r.id, r.x + ox, r.y + oy));
+  }
+
+  // The 3D view glides between frames and the camera moves under the reader's
+  // hand, so in 3D the card follows every rendered frame, not every telemetry one.
+  function trackInspector() {
+    if (view !== "3d" || selected === null || insp.card.hidden) return;
+    placeInspector(view3d.screenOf(selected));
   }
 
   function select(id) {
@@ -394,7 +456,155 @@
     for (const r of lastRobots) updateRobot(r);
     drawRoute(lastRobots);
     renderInspector(lastRobots);
+    if (view3d) view3d.setOverlay(overlay3d(lastRobots));
+    if (view3d && view !== "2d") {
+      if (selected === null) {
+        if (RIDING.has(perspective)) leaveRide();
+      } else {
+        // Picking an AMR in 3D puts the camera behind it; picking another
+        // while riding moves the ride over, in the same seat.
+        const mode = perspective === "pov" ? "pov" : "chase";
+        if (view3d.perspective(mode, selected)) perspective = mode;
+        syncPerspective();
+      }
+    }
   }
+
+  // ---- the 3D camera -----------------------------------------------------------
+
+  function setPerspective(mode) {
+    if (!view3d) return;
+    if (RIDING.has(mode)) {
+      if (selected === null) {
+        // Nothing picked yet: ride whoever is busy, so one click starts a ride.
+        const candidate = lastRobots.find((r) => r.state === "MOVING") || lastRobots[0];
+        if (!candidate) return;
+        perspective = mode;
+        select(candidate.id);
+        return;
+      }
+      if (view3d.perspective(mode, selected)) perspective = mode;
+    } else {
+      view3d.perspective(mode);
+      perspective = mode;
+    }
+    syncPerspective();
+  }
+
+  // Off the robot, camera left where the ride put it; the AMR stays selected.
+  function leaveRide() {
+    if (view3d) view3d.perspective("orbit");
+    perspective = "overview";
+    syncPerspective();
+  }
+
+  function syncPerspective() {
+    for (const b of perspectiveButtons) b.setAttribute("aria-pressed", String(b.dataset.perspective === perspective));
+    const riding = RIDING.has(perspective);
+    $("view-hint").textContent = !riding
+      ? "drag to orbit · right-drag to pan · scroll to zoom"
+      : perspective === "pov"
+        ? `AMR ${selected}'s view · drag to look around · Esc to leave`
+        : `riding AMR ${selected} · drag to look around · scroll to zoom · Esc to leave`;
+    const docked = view === "3d" && riding;
+    insp.card.classList.toggle("docked", docked);
+    if (!docked && selected !== null) renderInspector(lastRobots);
+  }
+
+  // ---- the 3D view -----------------------------------------------------------
+
+  // What the 3D view is handed: each body where the plan draws it, plus the
+  // selected route and the right-of-way links, in the plan's own millimetres.
+  function robots3d(robots) {
+    return robots.map((r) => {
+      const pose = robotEls.get(r.id)?.pose ?? { x: r.x, y: r.y, heading: 0 };
+      return {
+        id: r.id, x: pose.x, y: pose.y, heading: pose.heading, state: r.state,
+        battery: r.battery, low: r.battery <= 20,
+        carrying: cargoOf(r).length > 0,
+      };
+    });
+  }
+
+  function overlay3d(robots) {
+    const r = selected === null ? null : robots.find((q) => q.id === selected);
+    const route = r && r.route.length ? routeAhead(r) : null;
+    const present = new Set(robots.map((q) => q.id));
+    const waits = robots
+      .filter((q) => q.wait && q.wait.blocker >= 0 && present.has(q.wait.blocker))
+      .map((q) => [q.id, q.wait.blocker]);
+    return { selected, route, waits };
+  }
+
+  function load3d() {
+    if (!loading3d) {
+      loading3d = import("/static/floor3d.js")
+        .then((mod) => {
+          view3d = mod.createFloor3D($("floor3d"), {
+            // A click on the floor clears the selection, as it does on the plan.
+            onPick: (id) => {
+              if (id !== null) select(id);
+              else if (selected !== null) select(selected);
+            },
+            onRender: trackInspector,
+            // The AMR being ridden left the floor: back to a free camera.
+            onFollowEnd: () => {
+              perspective = "overview";
+              syncPerspective();
+            },
+          });
+          if (map) view3d.setMap(map);
+          if (lastRobots.length) view3d.setFrame(robots3d(lastRobots), overlay3d(lastRobots));
+          if (lastConsignments.length) view3d.setConsignments(lastConsignments);
+          return view3d;
+        })
+        .catch((err) => {
+          // No WebGL, or the module failed to load: the plan still works, and
+          // the switch says why 3D does not, where every frame cannot erase it.
+          const reason = `3D view unavailable: ${err.message}`;
+          console.error(reason);
+          for (const b of viewButtons) {
+            if (b.dataset.view === "2d") continue;
+            b.disabled = true;
+            b.title = reason;
+          }
+          setView("2d");
+          return null;
+        });
+    }
+    return loading3d;
+  }
+
+  function setView(next) {
+    view = VIEWS.includes(next) ? next : "2d";
+    floor.dataset.view = view;
+    for (const b of viewButtons) b.setAttribute("aria-pressed", String(b.dataset.view === view));
+    $("view-tools").hidden = view === "2d";
+    try { localStorage.setItem(VIEW_KEY, view); } catch (_) { /* a private window keeps no preference */ }
+    if (view === "2d") {
+      if (view3d) view3d.setActive(false);
+    } else {
+      load3d().then((v) => { if (v && view !== "2d") v.setActive(true); });
+    }
+    syncPerspective();
+  }
+
+  function initialView() {
+    // ?view=3d in the address wins, so a link can open straight into 3D.
+    const asked = new URLSearchParams(location.search).get("view");
+    if (VIEWS.includes(asked)) return asked;
+    try {
+      const kept = localStorage.getItem(VIEW_KEY);
+      if (VIEWS.includes(kept)) return kept;
+    } catch (_) { /* no storage: start on the plan */ }
+    return "2d";
+  }
+
+  for (const b of viewButtons) b.addEventListener("click", () => setView(b.dataset.view));
+  for (const b of perspectiveButtons) b.addEventListener("click", () => setPerspective(b.dataset.perspective));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && RIDING.has(perspective)) leaveRide();
+  });
 
   svg.addEventListener("click", () => { if (selected !== null) select(selected); });
   insp.close.addEventListener("click", () => { if (selected !== null) select(selected); });
@@ -402,6 +612,22 @@
   window.addEventListener("resize", () => {
     if (selected !== null) renderInspector(lastRobots);
   });
+
+  // The orders an AMR has on board. Frames from before ``carrying`` existed
+  // only say whether the queue head is being delivered.
+  function cargoOf(r) {
+    if (Array.isArray(r.carrying)) return r.carrying;
+    return r.task !== null && r.leg === "TO_DROP" ? [r.task] : [];
+  }
+
+  // Every announced order and whether its consignment has left the shelf: an
+  // AMR carrying it has picked it up, and a completed one has been delivered.
+  function consignments(f) {
+    const carried = new Set(f.robots.flatMap(cargoOf));
+    return (f.tasks || [])
+      .filter((t) => t.status !== "SCHEDULED")
+      .map((t) => ({ task: t.id, node: t.pickup, picked: t.status === "COMPLETED" || carried.has(t.id) }));
+  }
 
   // ---- frame ---------------------------------------------------------------
 
@@ -421,6 +647,12 @@
     drawWaits(f.robots);
     drawRoute(f.robots);
     renderInspector(f.robots);
+    if (view3d) view3d.setFrame(robots3d(f.robots), overlay3d(f.robots));
+
+    lastConsignments = consignments(f);
+    const waiting = new Set(lastConsignments.filter((c) => !c.picked).map((c) => c.node));
+    for (const [node, rect] of faceEls) rect.classList.toggle("waiting", waiting.has(node));
+    if (view3d) view3d.setConsignments(lastConsignments);
 
     const c = f.counters;
     $("c-done").textContent = c.tasks_completed;
@@ -472,5 +704,6 @@
     note.className = "note error";
   });
 
+  setView(initialView());
   connect();
 })();

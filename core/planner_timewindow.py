@@ -4,11 +4,11 @@ Context-aware routing after ter Mors (AAMAS 2009), on the resource model in
 core/timewindows.py. A* over states ``(node, time)`` where the cost *is* the time:
 arriving earlier is never worse when you are allowed to wait, and the search only ever
 stands at points where waiting is allowed. Between two such points the route is an
-**atomic group** -- a region, or a corridor and the regions at its ends, ending as the
-robot enters a two-lane lane or a station -- and the whole group must fit the free
-windows of every resource in it, shifted by one start time. That is what makes "never
-wait inside a region or corridor" a property of every plan rather than a rule enforced
-at run time.
+**atomic group** -- the region the robot is crossing, then the lane, corridor or
+station it enters beyond it -- and the whole group must fit the free windows of every
+resource in it, shifted by one start time. That is what makes "never wait inside a
+region" a property of every plan rather than a rule enforced at run time. A lane or a
+corridor is held from entry until the robot enters what follows, wait included.
 
 What the plan means at execution is *order*, not time. A robot enters a resource when
 the robots booked ahead of it there have left, however late that is. Time here decides
@@ -69,8 +69,8 @@ class Start:
     ``node`` is the node the search continues from: the station leaf a resting robot
     is about to leave, or the node a moving robot will next reach. ``at_ms`` is when it
     will be there -- at that node's region entry boundary if it has one. ``waitable``
-    says whether it can hold there: true at a station or at the end of a two-lane lane,
-    false inside a region or after a corridor.
+    says whether it can hold there: true at a station or at the end of a lane or a
+    corridor, false inside a region.
 
     A robot replanning mid-edge names the edge it is on through ``prefix_node``, the
     node it last left, and ``prefix_ms``, when it entered that node's region. The plan
@@ -137,43 +137,68 @@ class TimeWindowPlanner:
     # -- group enumeration ---------------------------------------------------
 
     def _groups_from(self, node: int, came_from: int, need_region: bool) -> list[_Group]:
-        """Every atomic group leaving ``node``.
+        """Every atomic group leaving ``node``: the region here if one must be
+        crossed, then one lane, corridor or station beyond it.
 
-        Depth-first through corridors and the regions between them until a two-lane
-        lane is entered (its far end is a waiting point) or a station is entered. On a
-        single-lane column this walks the whole column, branching at every cross-aisle,
-        because once inside a corridor a robot cannot stop until it is back on a
-        two-lane lane -- and the plan has to say so.
+        Corridors used to be atomic too, and the walk ran on through them to the next
+        two-lane lane. With every aisle single-lane that made each group span the
+        floor -- no waiting anywhere but a leaf -- and the fleet deadlocked. A corridor
+        is capacity one, so a robot waiting at its end holds it alone; that is a
+        waiting point like a lane's end, and the group stops there.
+
+        Except in front of a station. A robot queued at the end of a corridor for the
+        station off the next junction is sitting in one of that station's ways out.
+        At a corner the junction has only two, and two robots queued for the drop
+        there held both while the robot inside waited to leave (visual30 seed 2,
+        DROP05). So a station is entered only straight off the corridor that leads to
+        its junction -- corridor, region and station fitted as one group, the wait
+        taken a junction further back -- unless the robot is already standing there
+        when it plans, which is ``came_from`` < 0.
         """
         model = self.model
+        graph = model.graph
         out: list[_Group] = []
+        arrived_by_corridor = False
+        if came_from >= 0:
+            behind = graph.edge_between(came_from, node)
+            arrived_by_corridor = behind is not None and graph.edge(behind).single_lane
 
-        def walk(here: int, prev: int, offset: int, rels: list[_Rel], nodes: list[int], region_needed: bool) -> None:
-            if region_needed and model.has_region(here):
-                cross = model.region_cross_ms
-                rels = rels + [_Rel(model.region(here), offset, offset + cross)]
-                offset += cross
-            for neighbour, edge_id in model.graph.neighbours(here):
-                if neighbour == prev or neighbour in nodes:
-                    continue
-                if model.is_station(neighbour):
-                    depth = model.station_in_ms(neighbour)
-                    step = _Rel(
-                        model.station(neighbour),
-                        offset,
-                        offset + depth + config.STATION_HOLD_MS,
-                    )
-                    out.append(_Group(tuple(nodes + [neighbour]), tuple(rels + [step]), neighbour, True))
-                    continue
-                lane = model.lane(edge_id, neighbour)
-                run = model.lane_ms(edge_id)
-                step = _Rel(lane, offset, offset + run)
-                if lane.kind == CORRIDOR:
-                    walk(neighbour, here, offset + run, rels + [step], nodes + [neighbour], True)
-                else:
-                    out.append(_Group(tuple(nodes + [neighbour]), tuple(rels + [step]), neighbour, False))
+        def region_at(here: int, offset: int) -> tuple[list[_Rel], int]:
+            if not model.has_region(here):
+                return [], offset
+            cross = model.region_cross_ms
+            return [_Rel(model.region(here), offset, offset + cross)], offset + cross
 
-        walk(node, came_from, 0, [], [node], need_region)
+        def station_step(leaf: int, offset: int) -> _Rel:
+            depth = model.station_in_ms(leaf)
+            return _Rel(model.station(leaf), offset, offset + depth + config.STATION_HOLD_MS)
+
+        opening, offset = region_at(node, 0) if need_region else ([], 0)
+        for neighbour, edge_id in graph.neighbours(node):
+            if neighbour == came_from:
+                continue
+            if model.is_station(neighbour):
+                if arrived_by_corridor and model.has_region(node):
+                    continue  # reached only by the approach group below
+                out.append(_Group(
+                    (node, neighbour), tuple(opening + [station_step(neighbour, offset)]), neighbour, True
+                ))
+                continue
+            lane = model.lane(edge_id, neighbour)
+            run = model.lane_ms(edge_id)
+            step = _Rel(lane, offset, offset + run)
+            out.append(_Group((node, neighbour), tuple(opening + [step]), neighbour, False))
+            if lane.kind != CORRIDOR or not model.has_region(neighbour):
+                continue
+            crossing, after = region_at(neighbour, offset + run)
+            for leaf, _ in graph.neighbours(neighbour):
+                if leaf != node and model.is_station(leaf):
+                    out.append(_Group(
+                        (node, neighbour, leaf),
+                        tuple(opening + [step] + crossing + [station_step(leaf, after)]),
+                        leaf,
+                        True,
+                    ))
         return out
 
     # -- fitting a group into free windows -------------------------------------
@@ -198,6 +223,14 @@ class TimeWindowPlanner:
         s = earliest
         margin = table.margin_ms
         model = self.model
+        if fixed and any(
+            table.occupied(rel.resource, exclude_robot=robot_id) for rel in group.rels
+        ):
+            # No waiting allowed, and someone is standing on ground the group needs.
+            # Its booked exit is only an estimate; if it is waiting on me -- for the
+            # region I am crossing -- it never comes true, and I would stop in the
+            # region with it waiting behind me (visual30 seed 3, r7 and r30 at DROP02).
+            return None
         for _ in range(MAX_FIT_ITERATIONS):
             pushed_to = s
             end = s
@@ -228,6 +261,26 @@ class TimeWindowPlanner:
                         pushed_to = max(pushed_to, ahead.enter_ms + 1 - rel.enter)
                         break
                     end = max(s + rel.exit, table.lane_exit_after(res, enter, exclude_robot=robot_id))
+                    continue
+                if res.kind == CORRIDOR:
+                    floor = constraints.get(res, 0) if constraints else 0
+                    if enter < floor:
+                        pushed_to = max(pushed_to, floor - rel.enter)
+                        break
+                    if index == len(group.rels) - 1 and model.has_region(group.end_node):
+                        # As for a lane: I hold the corridor until the region at its
+                        # end takes me, and nobody may be booked into it meanwhile.
+                        region = model.region(group.end_node)
+                        ahead = table.blocking(
+                            region, exit_, exit_ + model.region_cross_ms, exclude_robot=robot_id
+                        )
+                        if ahead is not None:
+                            exit_ = max(exit_, ahead.exit_ms + margin + 1)
+                    blocker = table.blocking(res, enter, exit_, exclude_robot=robot_id)
+                    if blocker is not None:
+                        pushed_to = max(pushed_to, blocker.exit_ms + margin - rel.enter + 1)
+                        break
+                    end = s + rel.exit
                     continue
                 blocker = table.blocking(res, enter, exit_, exclude_robot=robot_id)
                 if blocker is not None:
@@ -271,12 +324,64 @@ class TimeWindowPlanner:
         lane feeding a busy junction.
         """
         start = self._respect_lane_fifo(start, table, robot_id)
+        deadline = self._prefix_deadline(start, table, robot_id)
+        if deadline is not None:
+            plan = self._plan(
+                table, start=start, goal=goal, robot_id=robot_id, priority=priority,
+                plan_seq=plan_seq, committed_ms=committed_ms, deadline=deadline,
+            )
+            if plan is not None:
+                return plan
+        return self._plan(
+            table, start=start, goal=goal, robot_id=robot_id, priority=priority,
+            plan_seq=plan_seq, committed_ms=committed_ms, deadline=None,
+        )
+
+    def _prefix_deadline(self, start: Start, table: ResourceTable, robot_id: int) -> int | None:
+        """When a robot standing in a corridor must be out of it, if someone is
+        booked to enter it next.
+
+        The stretch under the wheels cannot be re-fitted, only held longer -- and
+        held past the next robot's booked entry it is a plan that cannot come true,
+        because that robot is waiting for this one to leave. At a station it is a
+        gridlock: the robot queued at the end of the corridor for the drop, the
+        robot in the drop needing that corridor to leave (visual30 seed 2, DROP00).
+        So the plan out must leave before then -- by another arm if the one it wants
+        is not free in time. Only when no such plan exists does it fall back to
+        waiting where it stands, and the race is left to arbitration.
+        """
+        lane = self._prefix_lane(start)
+        if lane is None or lane.kind != CORRIDOR:
+            return None
+        model = self.model
+        entered = start.prefix_ms + (model.region_cross_ms if model.has_region(start.prefix_node) else 0)
+        if start.lane_entered_ms >= 0:
+            entered = min(entered, start.lane_entered_ms)
+        later = [
+            b.enter_ms for b in table.bookings(lane, exclude_robot=robot_id) if b.enter_ms > entered
+        ]
+        return min(later) - table.margin_ms if later else None
+
+    def _plan(
+        self,
+        table: ResourceTable,
+        *,
+        start: Start,
+        goal: int,
+        robot_id: int,
+        priority: int,
+        plan_seq: int,
+        committed_ms: int,
+        deadline: int | None,
+    ) -> RoutePlan | None:
+        """``plan`` with a deadline, or none, for leaving the start."""
         constraints: dict[Resource, int] = {}
         under_the_wheels = self._prefix_lane(start)
         for _ in range(MAX_FIFO_REPAIRS):
             plan = self._search(
                 table, start=start, goal=goal, robot_id=robot_id, priority=priority,
                 plan_seq=plan_seq, committed_ms=committed_ms, constraints=constraints,
+                deadline=deadline,
             )
             if plan is None:
                 return None
@@ -292,14 +397,14 @@ class TimeWindowPlanner:
         return None
 
     def _prefix_lane(self, start: Start) -> Resource | None:
-        """The lane already under the wheels, which no repair can move."""
+        """The lane or corridor already under the wheels, which no repair can move."""
         if start.prefix_node < 0:
             return None
         edge_id = self.model.graph.edge_between(start.prefix_node, start.node)
         if edge_id is None:
             return None
         lane = self.model.lane(edge_id, start.node)
-        return lane if lane.kind == LANE else None
+        return lane if lane.kind in (LANE, CORRIDOR) else None
 
     def _lane_order_offence(
         self,
@@ -309,8 +414,13 @@ class TimeWindowPlanner:
         *,
         skip: Resource | None = None,
     ) -> tuple[Resource, int] | None:
-        """The first lane whose booked window overtakes someone, and when this
-        robot would have to enter it instead.
+        """The first lane whose booked window overtakes someone -- or corridor whose
+        held window runs into someone's booking -- and when this robot would have to
+        enter it instead.
+
+        A corridor is fitted for its traversal and then held until the next group
+        starts, which a later group can push past a peer booked in behind. The repair
+        is the lane's: enter after that peer has been and gone.
 
         ``skip`` is the lane the robot is standing on. Its window is a fact about
         where the robot is, not a choice the search made, so a floor on it repairs
@@ -322,7 +432,16 @@ class TimeWindowPlanner:
         moves the start rather than the lane.
         """
         for step in plan.steps:
-            if step.resource.kind != LANE or step.resource == skip:
+            if step.resource == skip:
+                continue
+            if step.resource.kind == CORRIDOR:
+                blocker = table.blocking(
+                    step.resource, step.enter_ms, step.exit_ms, exclude_robot=robot_id
+                )
+                if blocker is not None:
+                    return step.resource, blocker.exit_ms + table.margin_ms + 1
+                continue
+            if step.resource.kind != LANE:
                 continue
             ahead = table.cuts_in_front_of(
                 step.resource, step.enter_ms, step.exit_ms, exclude_robot=robot_id
@@ -342,6 +461,7 @@ class TimeWindowPlanner:
         plan_seq: int,
         committed_ms: int,
         constraints: dict[Resource, int],
+        deadline: int | None = None,
     ) -> RoutePlan | None:
         self.stats.searches += 1
         model = self.model
@@ -399,6 +519,8 @@ class TimeWindowPlanner:
                 )
                 if fit is None:
                     continue
+                if deadline is not None and node == start.node and fit[0] > deadline:
+                    continue  # would hold the stretch under the wheels past its next user
                 s, end = fit
                 nxt = group.end_node
                 if nxt in closed:
@@ -519,7 +641,7 @@ class TimeWindowPlanner:
         nodes, steps = self._prefix(start)
         nodes.append(start.node)
         under_the_wheels = steps and (
-            steps[-1].resource.kind == LANE
+            steps[-1].resource.kind in (LANE, CORRIDOR)
             or (start.prefix_node >= 0 and steps[-1].resource == self.model.station(start.prefix_node))
         )
         if under_the_wheels and chain:
@@ -556,7 +678,7 @@ class TimeWindowPlanner:
                     enter_ms = min(enter_ms, opens_from)
                 if position == 0 and index == 0 and hold_station_from is not None:
                     enter_ms = min(enter_ms, hold_station_from)
-                if index == len(group.rels) - 1 and rel.resource.kind in (LANE, STATION):
+                if index == len(group.rels) - 1 and rel.resource.kind in (LANE, CORRIDOR, STATION):
                     # A closing station here is a spur being driven out of, held like
                     # a lane until the robot enters what comes next. The station a
                     # route *ends* at closes the last group, where ``follows_at`` is

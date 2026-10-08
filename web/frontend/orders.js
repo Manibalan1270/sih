@@ -5,6 +5,7 @@
   const $ = (id) => document.getElementById(id);
 
   const layers = {
+    racks: $("layer-racks"),
     lanes: $("layer-lanes"),
     nodes: $("layer-nodes"),
     robots: $("layer-robots"),
@@ -55,6 +56,11 @@
     const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
     svg.setAttribute("viewBox", `${minX} ${minY} ${maxX - minX} ${maxY - minY}`);
 
+    // The racks, so a pickup reads as a place beside the shelving.
+    for (const r of data.racks || []) {
+      el("rect", { class: "rack", x: r.x0, y: r.y0, width: r.x1 - r.x0, height: r.y1 - r.y0 }, layers.racks);
+    }
+
     const laneWidth = data.lane_offset_mm * 2 + 800;
     for (const e of data.edges) {
       const u = nodesById.get(e.u), v = nodesById.get(e.v);
@@ -69,16 +75,19 @@
     for (const n of data.nodes) {
       if (n.pickup || n.drop || n.parking || n.charger) {
         const cls = ["station", n.pickup ? "pickup" : "", n.drop ? "drop" : "",
-          n.parking ? "parking" : ""].join(" ").trim();
+          n.parking ? "parking" : "", n.pick_face ? "face" : ""].join(" ").trim();
+        // A pickup is a small pad in its aisle; a station off the ring is larger.
+        const half = n.pick_face ? 450 : 700;
         const rect = el("rect", {
-          class: cls, x: n.x - 700, y: n.y - 700, width: 1400, height: 1400,
+          class: cls, x: n.x - half, y: n.y - half, width: 2 * half, height: 2 * half,
         }, layers.nodes);
         if (!n.parking && !n.charger) {
           rect.classList.add("selectable");
           rect.addEventListener("click", () => choose(n.id));
           stationEls.set(n.id, rect);
         }
-        if (n.pickup || n.drop) {
+        // Dozens of pickups would bury the floor in labels; the picker below names them.
+        if ((n.pickup || n.drop) && !n.pick_face) {
           el("text", { class: "station-label", x: n.x, y: n.y + 1600 }, layers.nodes)
             .textContent = n.name;
         }

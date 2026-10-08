@@ -241,55 +241,91 @@ class TestStagingBays:
 
 class TestZonedMapStructure:
     @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
-    def test_every_aisle_is_a_single_lane(self, name: str) -> None:
-        """The zoned floors are one-way grids: every aisle carries one file of
-        traffic, and none of them two abreast.
-
-        These maps used to have a handful of single-lane pick-aisles among two-lane
-        ones, to give arbitration something to resolve. Every aisle is single lane
-        now, and what it resolves is the junctions between them -- a one-way grid
-        cannot produce a head-on, so a crossing is the only conflict left.
-        """
+    def test_every_aisle_is_a_single_lane_driven_either_way(self, name: str) -> None:
+        """Every aisle carries one AMR at a time, in either direction: a two-way
+        exclusive corridor. None is wide enough for two abreast, and none is one-way
+        -- a robot takes the short way and waits its turn at the mouth."""
         graph = Graph.load(MAPS_DIR / f"{name}.json")
         spurs = frozenset(graph.station_spur_edges)
         assert not graph.two_lane_edges(exclude=spurs), (
             f"{name} has aisles two AMRs could meet abreast on"
         )
-        assert graph.one_way_edges, f"{name} has no one-way aisle"
+        assert not graph.one_way_edges, f"{name} still has one-way aisles"
+        aisles = [e for e in graph.edges.values() if e.id not in spurs]
+        assert all(e.single_lane and e.bidirectional for e in aisles)
 
     @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
-    def test_the_one_way_grid_is_strongly_connected(self, name: str) -> None:
-        """Every node can be left as well as reached. An alternating one-way grid
-        fails this at its corners, which is why the perimeter circulates instead --
-        see scripts/generate_maps.py."""
+    def test_the_grid_is_strongly_connected(self, name: str) -> None:
+        """Every node can be left as well as reached."""
         graph = Graph.load(MAPS_DIR / f"{name}.json")
         assert graph.is_connected()
 
     @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
     def test_grid_dimensions_match_the_node_count(self, name: str) -> None:
-        """The floor is the grid. Everything else is a perimeter midpoint or a leaf
-        hanging off the ring: bays, pickup stations, drop stations."""
+        """The floor is the grid. Everything else is a midpoint -- a perimeter bend,
+        or a pickup partway along a pick-aisle -- or a leaf: bays and drops."""
         raw = _raw(name)
         grid = raw["grid"]
         cols, rows = grid["cols"], grid["rows"]
         bays = [n for n in raw["nodes"] if n.get("parking")]
-        stations = set(raw["pickup_nodes"]) | set(raw["drop_nodes"])
-        # One midpoint per perimeter edge: two rows of cols-1, two columns of rows-1.
-        mids = 2 * (cols - 1) + 2 * (rows - 1)
-        assert len(raw["nodes"]) == cols * rows + mids + len(bays) + len(stations)
+        mids = 2 * (cols - 1) + 2 * (rows - 1) + len(raw["pickup_nodes"])
+        assert len(raw["nodes"]) == cols * rows + mids + len(bays) + len(raw["drop_nodes"])
 
     @pytest.mark.parametrize("name", ["warehouse_zoned_30", "warehouse_zoned_100"])
-    def test_every_station_and_bay_is_its_own_leaf(self, name: str) -> None:
+    def test_every_drop_and_bay_is_its_own_leaf(self, name: str) -> None:
         """Independent leaves, not chains. A bay reached only through another bay puts
         one robot on another's sole way out, which is the parking half of
-        well-formedness violated; a station reached through a station is the same for
+        well-formedness violated; a drop reached through a drop is the same for
         tasks. Degree 1 means nothing can be behind it."""
         graph = Graph.load(MAPS_DIR / f"{name}.json")
-        leaves = set(graph.parking_nodes) | graph.task_endpoints
+        leaves = set(graph.parking_nodes) | set(graph.drop_nodes)
         for node in leaves:
             assert len(graph.neighbours(node)) == 1, f"{name}: node {node} is not a leaf"
         anchors = [graph.neighbours(node)[0][0] for node in leaves]
         assert len(anchors) == len(set(anchors)), f"{name}: two leaves share an anchor"
+
+    @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
+    def test_consignments_are_collected_in_the_aisle(self, name: str) -> None:
+        """A pickup is a node on a pick-aisle, beside a rack's face -- no spur, no
+        alcove, not a junction. It lies inside one corridor, which a robot collecting
+        there holds whole, so nobody drives in at the far end to meet it."""
+        from core.timewindows import ResourceModel
+        from simulator import racks
+
+        graph = Graph.load(MAPS_DIR / f"{name}.json")
+        model = ResourceModel(graph)
+        assert graph.pickup_nodes
+        assert set(graph.pickup_nodes) == racks.pick_faces(graph)
+        for node in graph.pickup_nodes:
+            ends = graph.neighbours(node)
+            assert len(ends) == 2 and not model.has_region(node), node
+            (_, a), (_, b) = ends
+            assert model.lane(a, node) == model.lane(b, node), f"{node} splits its corridor"
+
+    @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
+    def test_a_robot_collecting_stands_clear_of_the_rack(self, name: str) -> None:
+        """Stopped on the aisle centre line, the robot clears the shelving it
+        collects from and stands squarely in front of its pick face."""
+        from core import config
+        from simulator import racks
+
+        graph = Graph.load(MAPS_DIR / f"{name}.json")
+        r = config.ROBOT_RADIUS_MM
+        for rack in racks.racks(graph):
+            for face in rack.faces:
+                node = graph.node(face.node)
+                assert node.x_mm + r <= rack.x0 or node.y_mm + r <= rack.y0, face
+                assert face.y0 <= node.y_mm <= face.y1 or face.x0 <= node.x_mm <= face.x1, face
+
+    @pytest.mark.parametrize("name", ("warehouse_zoned_30", "warehouse_zoned_100"))
+    def test_every_cell_keeps_its_rack(self, name: str) -> None:
+        """Pickups are in the aisles; no cell gives up its rack for one."""
+        from simulator import racks
+
+        raw = _raw(name)
+        cols, rows = raw["grid"]["cols"], raw["grid"]["rows"]
+        graph = Graph.load(MAPS_DIR / f"{name}.json")
+        assert len(racks.racks(graph)) == (cols - 1) * (rows - 1)
 
     def test_scale_map_needs_16_bit_ids(self) -> None:
         """This is what forces scale100's edge_id_bits override."""

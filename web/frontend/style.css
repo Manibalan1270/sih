@@ -454,10 +454,16 @@ tbody tr:last-child td { border-bottom: 0; }
 .node.junction { fill: var(--ink-500); opacity: 1; }
 .node.marker { stroke: var(--graphite); stroke-width: 40; fill: none; opacity: 0.3; }
 
+/* Storage racks between the aisles, drawn as quiet blocks: furniture, not fleet. */
+.rack { fill: var(--ink-600); fill-opacity: 0.5; stroke: var(--ink-500); stroke-width: 40; }
+
 .station { stroke-width: 80; fill: none; stroke: var(--ink-500); }
 .station.pickup { fill: var(--pickup); stroke: var(--pickup); fill-opacity: 0.28; }
 .station.drop { fill: var(--drop); stroke: var(--drop); fill-opacity: 0.28; }
 .station.parking { fill: none; stroke: var(--rule); }
+/* A pick face, and one with a consignment waiting to be collected. */
+.station.pickup.face { stroke-width: 60; fill-opacity: 0.15; }
+.station.pickup.face.waiting { fill-opacity: 0.9; stroke: var(--chalk); }
 .charger-mark { fill: var(--verify); opacity: 0.8; }
 .station-label {
   font-family: var(--font-mono);
@@ -512,7 +518,9 @@ tbody tr:last-child td { border-bottom: 0; }
 .floor-hud {
   position: absolute;
   left: var(--s4); top: var(--s4);
+  max-width: calc(100% - 220px);   /* clear of the view switch */
   display: flex;
+  flex-wrap: wrap;
   gap: var(--s2);
   align-items: center;
   pointer-events: none;
@@ -527,6 +535,85 @@ tbody tr:last-child td { border-bottom: 0; }
   color: var(--graphite);
 }
 .hud-chip strong { color: var(--chalk); font-weight: 500; }
+
+/* ---- plan, 3D, or both --------------------------------------------------
+ *
+ * One floor, two drawings of it. The plan is the default; the 3D view is the
+ * same frames from inside the warehouse; Split shows them side by side. The
+ * switch is chrome, so it stays ink and chalk like every other control. */
+
+.floor3d { position: absolute; inset: 0; display: none; }
+.floor3d canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.floor3d canvas:active { cursor: grabbing; }
+.floor[data-view="3d"] > svg { display: none; }
+.floor[data-view="3d"] .floor3d,
+.floor[data-view="split"] .floor3d { display: block; }
+.floor[data-view="split"] > svg { width: 50%; }
+.floor[data-view="split"] .floor3d { left: 50%; border-left: 1px solid var(--rule); }
+
+/* Two segmented switches: which drawing (2D / 3D / Split), and in 3D where
+ * the camera is (Overview / Top / Chase / POV). */
+.view-switch {
+  position: absolute;
+  right: var(--s4); top: var(--s4);
+  z-index: 4;
+}
+.view-switch,
+.perspective {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: rgba(var(--overlay-rgb), 0.86);
+}
+.view-switch button,
+.perspective button {
+  height: 26px;
+  min-width: 46px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--graphite);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.view-switch button:hover:not(:disabled),
+.perspective button:hover { color: var(--chalk); background: var(--ink-700); }
+.view-switch button:disabled { opacity: 0.4; cursor: not-allowed; }
+.view-switch button[aria-pressed="true"],
+.perspective button[aria-pressed="true"] { background: var(--chalk); color: var(--ink-900); }
+.view-switch button:focus-visible,
+.perspective button:focus-visible { outline: 2px solid var(--chalk); outline-offset: 1px; }
+
+.view-tools {
+  position: absolute;
+  right: var(--s4); top: calc(var(--s4) + 40px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: calc(100% - 2 * var(--s4));
+}
+.view-tools[hidden] { display: none; }
+.view-hint {
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: rgba(var(--overlay-rgb), 0.72);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--graphite);
+  text-align: right;
+  pointer-events: none;
+}
+
+/* Riding an AMR puts it mid-screen, so its card docks in the corner instead
+ * of sitting across the road ahead. */
+.inspector.docked { left: var(--s4); top: auto; bottom: var(--s4); transform: none !important; }
 
 .side {
   border-left: 1px solid var(--rule);
@@ -784,6 +871,10 @@ tbody tr:last-child td { border-bottom: 0; }
   .rail-foot { margin-top: 0; }
   .sheet { padding: var(--s4); }
   .stat-grid { grid-template-columns: 1fr 1fr; }
+  /* Too narrow for two drawings abreast: Split stacks them. */
+  .floor[data-view="split"] > svg { width: 100%; height: 50%; }
+  .floor[data-view="split"] .floor3d { left: 0; top: 50%; border-left: 0; border-top: 1px solid var(--rule); }
+  .view-hint { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -75,12 +75,23 @@ def plan_precedence(mine: RoutePlan, theirs: RoutePlan) -> bool:
 def stands_on(plan: RoutePlan, resource: Resource) -> bool:
     """Whether ``plan`` opens standing on ``resource``.
 
-    A plan's first step is the ground under the robot when it committed: the berth
-    and spur of the station it is leaving, the stretch of aisle it is already on.
-    That step is a fact about where the robot is, not a choice it made, which is
-    why it is exempt from the commit-order rule below.
+    A plan's opening steps are the ground under the robot when it committed: the
+    berth and spur of the station it is leaving, the stretch of aisle it is already
+    on. That is a fact about where the robot is, not a choice it made, which is why
+    it is exempt from the commit-order rule below.
+
+    Not only the first step. A plan made mid-aisle opens with the junction the robot
+    crossed onto it -- long behind it -- and then the corridor it is in. Reading only
+    step 0 said such a robot stood on nothing, commit order told it to replan, and it
+    rebuilt the same hold while the peer it met head-on kept a booking through it.
+    What counts is a step entered by the commit and not over by then.
     """
-    return bool(plan.steps) and plan.steps[0].resource == resource
+    for step in plan.steps:
+        if step.enter_ms > plan.committed_ms:
+            return False
+        if step.resource == resource and step.exit_ms >= plan.committed_ms:
+            return True
+    return False
 
 
 def unique_winner(contenders: list[tuple[int, int]]) -> tuple[int, int] | None:

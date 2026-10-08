@@ -175,11 +175,10 @@ class TestHeuristic:
 
         On a two-way grid every monotone staircase between opposite corners costs the
         same, every node in the enclosing rectangle ties at the optimal f, and A* has
-        to expand all of them -- the heuristic is exact and still cannot prune. One-way
-        aisles cut most of those staircases: a row may only be taken one way, so far
-        fewer orderings survive and the search expands a fraction of the rectangle.
-        What is worth holding is the ceiling -- the whole floor and no more -- and that
-        the heuristic still beats a blind search.
+        to expand all of them -- the heuristic is exact and still cannot prune. Every
+        aisle here is two-way, so that is the case. What is worth holding is the
+        ceiling -- the whole floor and no more -- and that the heuristic still beats a
+        blind search.
         """
         graph = Graph.load("maps/warehouse_zoned_100.json")
         # The far corner of the *floor*, not max(nodes): staging bays are appended
@@ -188,16 +187,16 @@ class TestHeuristic:
         goal = (rows - 1) * cols + (cols - 1)
         astar = AStarPlanner(graph)
         route = astar.route(0, goal)
-        assert route is not None, "opposite corners of a one-way floor must connect"
+        assert route is not None, "opposite corners of the floor must connect"
         assert graph.straight_line_ms(0, goal) <= astar.route_cost(route)
-        # The floor rectangle plus its perimeter midpoints is the whole of the aisle
-        # network; what the heuristic prunes is every leaf -- a station or a bay leads
-        # away from the goal -- while a blind search wanders into each one inside the
-        # cost radius.
+        # The floor rectangle plus its midpoints -- the perimeter's bends, and the
+        # pickups partway along the pick-aisles -- is the whole of the aisle network;
+        # what the heuristic prunes is every leaf -- a station or a bay leads away from
+        # the goal -- while a blind search wanders into each one inside the cost radius.
         floor = cols * rows - 1
-        mids = 2 * (cols - 1) + 2 * (rows - 1)
+        mids = sum(1 for n in graph.nodes.values() if n.name.startswith(("M", "PICK")))
         assert astar.stats.expansions <= floor + mids, (
-            f"expected at most the floor rectangle ({floor}) plus its {mids} boundary "
+            f"expected at most the floor rectangle ({floor}) plus its {mids} "
             f"midpoints; got {astar.stats.expansions}"
         )
         assert _expansions_with_zero_heuristic(graph, 0, goal) >= astar.stats.expansions

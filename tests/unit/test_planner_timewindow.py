@@ -56,12 +56,15 @@ def steps_of(plan: RoutePlan, kind: int, key: int | None = None):
 
 
 def assert_no_waiting_inside(plan: RoutePlan, model: ResourceModel) -> None:
-    """Regions and corridors are held for exactly their traversal time."""
-    for step in plan.steps:
+    """Regions are held for exactly their crossing. A corridor may be waited in, at
+    its end, and is then held until the robot enters what comes next -- never a gap
+    in which the robot stands in it unbooked."""
+    for index, step in enumerate(plan.steps):
         if step.resource.kind == REGION:
             assert step.exit_ms - step.enter_ms == model.region_cross_ms, str(step)
-        elif step.resource.kind == CORRIDOR:
-            assert step.exit_ms - step.enter_ms == model.lane_ms(step.resource.key), str(step)
+        elif step.resource.kind == CORRIDOR and index + 1 < len(plan.steps):
+            following = plan.steps[index + 1]
+            assert following.enter_ms <= step.exit_ms, f"{step} released before {following}"
 
 
 def _opening_hold(plan: RoutePlan) -> Resource | None:
@@ -130,9 +133,9 @@ class TestHeadOnInACorridor:
         (rb,) = [s for s in steps_of(second, REGION) if s.resource.key == 1]
         assert rb.enter_ms > unhindered, "the second robot did not wait at the mouth"
 
-    def test_the_corridor_and_its_exit_region_are_booked_as_one(self) -> None:
-        """A robot may not enter the corridor unless it can also leave it: the exit
-        region must be free on arrival, because it cannot wait inside."""
+    def test_a_robot_waiting_at_the_corridor_end_holds_it(self) -> None:
+        """A robot may enter the corridor before its exit region is free and wait at
+        the far end -- holding the corridor, alone, until the region takes it."""
         # Park a third robot's plan across B's region right when robot 1 would exit.
         first_free = self.planner.plan(
             self.table, start=from_station(self.model, 10), goal=20,
@@ -153,10 +156,13 @@ class TestHeadOnInACorridor:
         assert first is not None
         assert_no_waiting_inside(first, self.model)
         assert_disjoint_on_capacity_one(first, blocker, config.MARGIN_MS)
-        # It entered the corridor later so as to reach B after the blocker had left.
+        # It reaches B after the blocker has left, and the corridor is its own
+        # until then.
         (c1,) = steps_of(first, CORRIDOR)
-        (c0,) = steps_of(first_free, CORRIDOR)
-        assert c1.enter_ms > c0.enter_ms
+        (b1,) = [s for s in steps_of(first, REGION) if s.resource.key == 1]
+        (bb,) = [s for s in steps_of(blocker, REGION) if s.resource.key == 1]
+        assert b1.enter_ms > bb.exit_ms
+        assert c1.exit_ms == b1.enter_ms
 
 
 class TestCrossingAtAJunction:
@@ -443,13 +449,14 @@ class TestWireForm:
         graph = Graph.load("maps/warehouse_zoned_30.json")
         model = ResourceModel(graph)
         planner = TimeWindowPlanner(model)
-        pick = graph.pickup_nodes[0]
-        anchor, spur = model.anchor_of(pick)
-        # Past the anchor, on the first aisle out of it.
-        nxt = next(n for n, _ in graph.neighbours(anchor) if n != pick)
+        drop = graph.drop_nodes[0]
+        anchor, spur = model.anchor_of(drop)
+        # Past the anchor, on the first aisle out of it, bound for a pickup that is
+        # a node partway along a corridor.
+        nxt = next(n for n, _ in graph.neighbours(anchor) if n != drop)
         start = Start(nxt, 9000, waitable=True, prefix_node=anchor, prefix_ms=4000)
         plan = planner.plan(
-            ResourceTable(), start=start, goal=graph.drop_nodes[2],
+            ResourceTable(), start=start, goal=graph.pickup_nodes[-1],
             robot_id=1, priority=10, plan_seq=2, committed_ms=8000,
         )
         assert plan is not None

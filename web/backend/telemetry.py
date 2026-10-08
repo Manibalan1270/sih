@@ -17,6 +17,8 @@ from typing import Any
 
 from core import config
 from core.robot import Robot
+from core.task import Leg
+from simulator import racks
 from simulator.scenario import Simulation, load_map
 
 
@@ -30,6 +32,7 @@ def map_payload(sim: Simulation) -> dict[str, Any]:
     _, raw = load_map(sim.scenario)
     pickups = set(raw.get("pickup_nodes", ()))
     drops = set(raw.get("drop_nodes", ()))
+    faces = racks.pick_faces(graph)
     nodes = []
     for node in graph.nodes.values():
         nodes.append(
@@ -44,6 +47,8 @@ def map_payload(sim: Simulation) -> dict[str, Any]:
                 "parking": node.is_parking,
                 "pickup": node.id in pickups,
                 "drop": node.id in drops,
+                # A pickup in the aisle, collected from the face of the rack beside it.
+                "pick_face": node.id in faces,
                 "zone": zones.zone_of(node.id) if zones.enabled else -1,
             }
         )
@@ -66,6 +71,8 @@ def map_payload(sim: Simulation) -> dict[str, Any]:
         "nodes": nodes,
         "edges": edges,
         "zones": list(zones.zone_ids) if zones.enabled else [],
+        # Where the shelving stands, so the plan, the 3D floor and Webots agree.
+        "racks": racks.racks_payload(graph),
         "robot_radius_mm": config.ROBOT_RADIUS_MM,
         "lane_offset_mm": config.AISLE_LANE_OFFSET_MM,
         "junction_footprint_mm": config.JUNCTION_FOOTPRINT_MM,
@@ -130,6 +137,9 @@ def robot_payload(robot: Robot) -> dict[str, Any]:
         "route": list(robot.remaining_route),
         "eta_ms": _eta_ms(robot),
         "queue": len(robot.queue),
+        # Every consignment on board, not only the queue head's: an order won
+        # mid-delivery goes to the head while the earlier one is still carried.
+        "carrying": [t.task_id for t in robot.queue.tasks if t.leg is Leg.TO_DROP],
         "wait": (
             {"kind": wait.kind, "blocker": wait.blocker_id, "resource": wait.resource}
             if wait is not None

@@ -30,6 +30,17 @@ Two views of one run, both spectators of the same headless engine:
   robot's position, heading, state and battery ring, the task it holds, and a dashed link
   to the peer it is holding for. Read-only by construction (FR-8.4): the backend owns no
   transport, which `tests/test_architecture.py` enforces.
+- **Live floor in 2D, 3D, or both** (<http://127.0.0.1:8000/simulation>): the switch at
+  the floor's top right draws the same frames as the plan, in 3D, or side by side
+  (*Split*). The 3D warehouse has steel shelving stocked with cartons, painted aisle
+  lines and floor fiducials; racks come from `simulator/racks.py`, the rule the Webots
+  world is built from too. Consignments are collected *in the aisle*: an order waiting at
+  a pickup lights a carton on the face of the rack beside it and a pick light above it,
+  and when the AMR stops there that carton leaves the shelf and rides on the robot -- one
+  carton at a time, delivered before the next is collected. The camera has four positions: *Overview*, *Top*, *Chase* (third person, riding
+  behind an AMR) and *POV* (from the AMR's front). Clicking an AMR starts a Chase ride;
+  Esc leaves it. `?view=3d` opens straight into 3D. Three.js is vendored under
+  `web/frontend/vendor/three/` (MIT), so the 3D view works with no internet.
 - **Benchmark panel** (bottom of the overview): runs the section 6.3 A/B protocol --
   Configuration A stop-and-wait against Configuration B ROBOTON -- over N seeds and shows
   both columns side by side. Same scenario, same seeds, therefore the same task sets;
@@ -247,12 +258,18 @@ All found while implementing; all should be corrected in v1.1.
     pairs fail on benchmark_map, 996 of 1,128 on warehouse_zoned_30, 17,738 of 18,336 on
     warehouse_zoned_100. **Resolved** by making every station a degree-1 spur, as the
     parking bays already were: the benchmark map's depots were, and four more hang off
-    its station junctions; the generated maps are Kiva-style, with pickup stations off
-    the left column (inbound dock), drop stations off the right (packing), and bays off
-    the rest of a perimeter ring whose edges are split at their midpoints so every leaf
-    has its own anchor -- a bay chained behind another would put one robot on another's
-    only way out. `Graph.is_well_formed` now reports no failing pair on any map, and it
-    is a plain test rather than an xfail. The SRS should state the condition.
+    its station junctions. On the generated maps consignments are collected **in the
+    aisle** -- a pickup is a node midway along a pick-aisle segment, beside the rack face
+    it collects from (50 on warehouse_zoned_30, every interior segment; 121 on
+    warehouse_zoned_100) -- which is never a junction, so a robot collecting is parked in
+    a corridor it holds whole, not in an intersection. Drop stations hang off the right of
+    the floor (packing) and bays off the rest of a perimeter whose edges are split at
+    their midpoints so every leaf has its own anchor -- a bay chained behind another would
+    put one robot on another's only way out. Where racks stand and which face each pickup
+    collects from is one rule in `simulator/racks.py` that the Webots world, the plan and
+    the 3D floor all draw from. `Graph.is_well_formed` now
+    reports no failing pair on any map, and it is a plain test rather than an xfail. The
+    SRS should state the condition.
 
 ## Status
 
@@ -277,20 +294,22 @@ Last updated 2026-09-15.
 
 | what | evidence |
 |---|---|
-| **Route-level reservation executed by precedence** (plan Steps 0-4). `core/timewindows.py` (resources, bookings, wire form), `core/planner_timewindow.py` (free-time-window A*), `core/robot.py` (commit a plan, PATH broadcast, enter by precedence), `core/arbitration.py` (shrunk to the race rule `plan_precedence`). The per-junction machinery and `core/reservation.py` are gone. | `bench3` 30/30 seeds: 12/12 tasks, 0 collisions. 6 AMRs on the benchmark map (twice its design density): 10/10 seeds clean, every task done. `visual30` headless: 120/120 tasks, 0 collisions on seeds 0-2 (makespan 25-29 min sim time). |
+| **Route-level reservation executed by precedence** (plan Steps 0-4). `core/timewindows.py` (resources, bookings, wire form), `core/planner_timewindow.py` (free-time-window A*), `core/robot.py` (commit a plan, PATH broadcast, enter by precedence), `core/arbitration.py` (shrunk to the race rule `plan_precedence`). The per-junction machinery and `core/reservation.py` are gone. | `bench3` 30/30 seeds: 12/12 tasks, 0 collisions. 6 AMRs on the benchmark map (twice its design density): 10/10 seeds clean, every task done. `visual30` headless on the two-way floor with pickups in the aisles (Oct 7), seeds 0-11: **0 collisions**; 10 of 12 seeds deliver every task (makespan 22-28 min sim time), seeds 7 and 9 stall at 100 and 106 of 120 (the face-to-face corridor case under "Still open"). `bench3` after the same change: 30/30 seeds and 6 AMRs x 10 seeds, every task, 0 collisions. |
 | **Protocol** (Step 3): `MessageType.PATH`, `Intent.plan_seq/plan_index`; every plan a fleet commits round-trips the wire step for step. | `tests/unit/test_messages.py::TestPath`, `tests/unit/test_planner_timewindow.py::TestWireForm` |
 | **Kiva-style, well-formed maps** (Steps 0-1), grid pitch 6000 so a hold line fits outside both regions of a ring edge; six bays on the benchmark map. | `tests/unit/test_maps.py` invariants (well-formed, no lane overlap, junction spacing) |
 | **Fleet dashboard + Run Control** (Phase 12, AC-6): `py -m web.backend.app`, then <http://127.0.0.1:8000>. Read-only by construction (FR-8.4). Three pages: `/` overview, `/orders` order entry, `/simulation` live floor. | `tests/unit/test_web.py`, `tests/test_architecture.py::TestDashboardIsReadOnly`. The overview and the live floor were confirmed serving; **the order-entry page has never been exercised**. |
 | **Order gateway** (FR-4.1, IF-3.2): `gateway/orders.py` accepts a journey and appends it to the running task set, where the allocator announces it like generated work; `gateway/api.py` serves `/api/orders`. Refuses junction endpoints (defect 13) and bays. | `tests/unit/test_gateway.py`, `tests/test_architecture.py::TestTheOrderGatewayNamesNoRobot` -- **neither has been run**. |
 | **Webots 3D** (AC-5/AC-6 visual): `scripts/generate_world.py`, `webots/controllers/fleet_supervisor`, `scripts/probe_webots.py`. This host sustains 30 AMRs at ~7x real time. | `tests/unit/test_webots.py`; `config/webots_capacity.json` |
-| Full suite | **602 passed, 3 skipped** (hardware-only TCs), `py -m pytest -q` |
+| Full suite | **656 passed, 3 skipped** (hardware-only TCs), **1 failed**: AC-3's speed-up, failing before this change too. `py -m pytest -q` |
 
 Acceptance criteria as they stand: **AC-1** largely met (70 traced TCs); **AC-2** zero collisions
 across the 30-seed `bench3` gate; **AC-4** gateway-pause behavior verified; **AC-5** met;
 **AC-6** dashboard and Webots exist and render live position and battery. **AC-3 remains open**:
 with `YIELD_SPEED_MM_S` held at its safe, tested value, B is *slower* than A on `bench3` at
-`1.09x` at 3 AMRs and `1.36x` at 6 (requirement is `<=0.8x`). That is better than the `1.21x`
-previously recorded, but still the wrong side of the bar.
+`1.20x` at 3 AMRs in the AC-3 test (requirement is `<=0.8x`). It was `1.09x` before the
+Oct 7 two-way-corridor change: about two thirds of the loss is that change (bench3's choke is
+now a corridor a robot may wait in), the rest is the one-carton rule -- an order is no longer
+slotted ahead of one already on board, which was a correctness bug, not a tuning choice.
 
 Two things are worth saying about that number before it is read as a verdict on coordination.
 
@@ -353,7 +372,10 @@ a station, which is the mechanism doing its job rather than overhead around it.
 
    AC-3 also still needs re-measurement against the new baseline; no number has been taken
    since the yield speed changed and the bid filter landed.
-3. ~~A duplicate completion.~~ **Resolved, and the "left to do" claim was stale.** The
+3. **A duplicate completion -- reopened.** Measured in October across 12 `visual30` seeds:
+   121/120 on 3 of them, on both the old map (seeds 5, 7, 10) and the pick-face map (3, 5,
+   11), with no message loss. Whatever the healing below covers, it does not cover this.
+   The entry it replaces read: ~~Resolved, and the "left to do" claim was stale.~~ The
    `visual30` seed-0 121/120 report predates `Intent.held_task_id` (FR-4.8 healing: a robot
    whose peer reports holding, or completing, the same task relinquishes or drops its own copy
    within one INTENT period). That mechanism already ships, is already exercised by
@@ -405,18 +427,18 @@ Two entries in "Known SRS defects" are stale and should be read with this note u
 ### How the coordination works now (read before touching it)
 
 Every aisle on every map is a **single lane**: one file of traffic, no aisle wide enough
-for two AMRs abreast. Most are one-way, laid out as dual carriageways -- each leg of the
-floor is a pair of single-lane aisles running opposite ways on their own ground -- so
-neither direction waits for the other and a head-on is impossible by construction. The
-exception is the benchmark map's choke, which is two-way and capacity one: that is the
-contention the graded experiment exists to measure. Station spurs are two-way as well,
+for two AMRs abreast. On the warehouse floors every aisle is also **two-way**: a corridor,
+one AMR at a time from junction to junction in whichever direction it needs. The
+benchmark map keeps its one-way dual carriageways round a two-way choke -- that choke is
+the contention the graded experiment exists to measure. Station spurs are two-way,
 because a dead end has to be left the way it was entered, and hold one robot at a time.
 
 A robot books its **whole route** as time windows on resources -- junction *regions*
 (node plus `JUNCTION_FOOTPRINT_MM` into every arm, capacity one, never a place to wait),
 *lanes* (one per direction of an edge, FIFO, waiting only at the end), single-lane
-*corridors* (capacity one, either direction, atomic) and *stations* (a leaf **and its
-spur**, capacity one) -- against every plan it has heard
+*corridors* (one per junction-to-junction stretch however many bends and pickups lie
+along it, capacity one, either direction, waiting at the end or at a pickup) and
+*stations* (a leaf **and its spur**, capacity one) -- against every plan it has heard
 (PATH, repeated every `PATH_REPEAT_MS`). It then drives by **order, never time**: it enters a
 resource only after every robot booked ahead of it there has released it, which that robot's
 INTENT `plan_index` says. Two plans committed before either heard the other are settled by
@@ -445,6 +467,55 @@ each of which was a measured collision or deadlock on the way here:
 - A robot blocked by precedence checks whether its blocker is waiting on something *it* has
   booked ahead of that blocker; that two-resource cycle is invisible to a total order on one
   resource, and it is what deadlocked a depot spur against the junction at its mouth.
+- A robot's bookings must say where it physically is. Two ways they did not, each a
+  measured collision at 30 AMRs (the old map collided too: 2 of 12 `visual30` seeds):
+  - Plan progress is synced *before* the replan decision (`Robot._drive_tick`). Synced only
+    after, a robot a few mm into a region read as late for it, replanned, and re-timed the
+    region to now -- behind the peer it had been ahead of.
+  - A capacity-one booking its robot already stands on (by INTENT) is pinned as entered from
+    the start (`ResourceTable.bookings`, fed by `note_progress`). Early entry is legal --
+    order gates, not time -- and without the pin a peer booked the gap in front of an early
+    occupant's window, then drove in after it. Time-gating early entry instead was tried and
+    stalled `bench3` on every seed: the executor depends on entering early.
+- Two-way corridors everywhere (Oct 7) exposed eight more, each a measured stall or
+  contact on `visual30`:
+  - A corridor is a place to wait, held until the robot enters what follows. Atomic
+    corridors chained into groups spanning the floor and the fleet gridlocked.
+  - Standing on a resource means any step entered by the commit and not yet over
+    (`arbitration.stands_on`), not step 0: a replan mid-aisle opens with the junction
+    already behind it, and the robot standing in the corridor was told to give way.
+  - A station is entered only straight off the corridor that leads to its junction --
+    corridor, region and station booked as one group. Two robots queued for a corner drop
+    in its two arms left the robot inside with no way out.
+  - A robot standing in a corridor someone else is booked into next plans its way out
+    before that booking (`TimeWindowPlanner._prefix_deadline`), by another arm if need be.
+  - The entry time a replan carries is the one booked for the visit at the robot's route
+    position (`Robot._booked_enter`), not any earlier visit to the same resource. A robot
+    that turned round at a pickup crossed the junction behind it twice, and the first
+    crossing's time put it ahead of a robot already in the corridor beyond.
+  - A corridor is released on entering the far region, as a lane is, so a region entered
+    early is pinned as occupied.
+  - A robot crossing a region holds the stretch beyond it too (`ResourceTable._holds`): it
+    cannot stop, so it will be there whatever its booking says. Pinned only by the step it
+    reported, a peer booked that corridor in front of it and both drove in.
+  - A robot that cannot wait (inside a region) never plans into ground a peer is standing
+    on (`ResourceTable.occupied`), whatever that peer's booked exit says: the peer may be
+    waiting for the very region the robot is in.
+- Tried and rejected on the way, both measured worse on 12 `visual30` seeds: pinning a
+  replan inside a region to the exit its gate cleared (3 stalls, 1 contact), and skipping
+  lateness replans inside a region (7 stalls, 2 contacts). Late re-booking from inside a
+  junction is load-bearing.
+- **Still open (two-way floor):** two robots can still both commit to one corridor from
+  opposite junctions when one re-books from inside its junction before the other's INTENT
+  reaches it; neither can back out of a corridor mid-edge, so they stand face to face.
+  That is the stall on `visual30` seeds 7 and 9 below. Reversing out of a corridor is the
+  fix it needs.
+- **Still open:** a robot that lets go of a task mid-aisle is snapped back to the node behind
+  it (`Robot._release_current`, `_drop_task`), which can put it "inside" a junction its plan
+  released. Keeping it in place was tried three ways; each traded the phantom for a
+  lane-order deadlock between idle robots, because a plan carries no physical order on a
+  lane. And a lane queue can still invert (a robot behind books the next junction first);
+  that is the one stalled task in 12 `visual30` seeds below.
 - Geometry: the hold line sits outside the region behind as well (`Robot._hold_line_mm`);
   `HOLD_LINE_MM` is 300 because the footprint is lane offset plus collision distance with no
   margin; the modelled sensor ignores the oncoming lane of the same edge.

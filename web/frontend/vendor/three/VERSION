@@ -1,0 +1,9 @@
+three@0.186.1 (MIT, see LICENSE), copied unmodified from the npm package:
+
+  build/three.module.js                      -> three.module.js
+  build/three.core.js                        -> three.core.js (imported by three.module.js)
+  examples/jsm/controls/OrbitControls.js     -> addons/controls/OrbitControls.js
+
+Vendored rather than loaded from a CDN so the live floor's 3D view works on a demo
+floor with no internet. To upgrade, replace all three files from one release and
+keep the import map in web/frontend/simulation.html pointing at them.

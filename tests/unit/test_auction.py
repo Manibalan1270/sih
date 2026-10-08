@@ -39,6 +39,46 @@ def planner(benchmark_map: Graph) -> AStarPlanner:
     return AStarPlanner(benchmark_map)
 
 
+class TestOneCartonOnBoard:
+    """An AMR carries one carton. A won order is never slotted ahead of one already
+    collected, or the robot detours to a second pickup with the first on its deck,
+    drops one and drives off still loaded -- what the 3D floor showed as a box riding
+    away from a drop."""
+
+    def test_no_insertion_point_ahead_of_an_order_on_board(self) -> None:
+        queue = TaskQueue(2)
+        carried = task(1, pickup=1, drop=5)
+        carried.reach_pickup(0)
+        queue.add(carried)
+        assert list(queue.insertion_points()) == [1]
+
+    def test_the_bid_prices_only_after_the_drop(self, planner) -> None:
+        queue = TaskQueue(2)
+        carried = task(1, pickup=1, drop=5)
+        carried.reach_pickup(0)
+        queue.add(carried)
+        # A pickup right where the robot stands: cheapest to grab first, if allowed.
+        bid = Auctioneer(robot_id=1).price(
+            task(2, pickup=0, drop=6), start_node=0, queue=queue, battery_pct=100,
+            travel_cost=planner.travel_cost, now_ms=0, is_idle=False,
+        )
+        assert bid is not None and bid.insert_at == 1
+
+    def test_a_claim_priced_before_the_pickup_lands_behind_it(self) -> None:
+        """The bid may predate the pickup; the queue clamps the slot it was won at."""
+        queue = TaskQueue(2)
+        head = task(1, pickup=1, drop=5)
+        queue.add(head)
+        head.reach_pickup(0)  # collected while the auction ran
+        queue.insert(0, task(2, pickup=2, drop=6))
+        assert [t.task_id for t in queue] == [1, 2]
+
+    def test_with_nothing_on_board_any_slot_is_open(self) -> None:
+        queue = TaskQueue(2)
+        queue.add(task(1, pickup=1, drop=5))
+        assert list(queue.insertion_points()) == [0, 1]
+
+
 class TestBidFormula:
     """Section 4.4's formula, term by term."""
 

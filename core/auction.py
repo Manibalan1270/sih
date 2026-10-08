@@ -306,7 +306,7 @@ class Auctioneer:
 
         best_cost: int | None = None
         best_at = 0
-        for position in range(len(list(queue)) + 1):
+        for position in queue.insertion_points():
             with_task = committed_cost(
                 start_node, queue, travel_cost, extra=task, insert_at=position
             )

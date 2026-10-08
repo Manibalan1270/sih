@@ -1,6 +1,6 @@
 {
  "name": "warehouse_zoned_30",
- "description": "Zoned warehouse for the 30-AMR visual scenario. 12x6 grid of aisle intersections (44 m x 25 m), partitioned into 6 zones as 3 column bands x 2 row bands. Every aisle is a single lane travelled one way: the perimeter circulates as a directed ring and the interior rows and columns alternate, so no two robots ever meet head-on and contention is confined to the junctions between them. Fits 8-bit node and edge ids.",
+ "description": "Zoned warehouse for the 30-AMR visual scenario. 12x6 grid of aisle intersections (66 m x 30 m), partitioned into 6 zones as 3 column bands x 2 row bands. Every aisle is a single lane driven either way, one AMR at a time from junction to junction, so no two robots ever meet head-on or pass abreast. Consignments are collected in the aisle itself, at a pickup midway along every interior pick-aisle segment (50), and dropped at stations off the right of the floor. Fits 8-bit node and edge ids.",
  "grid": {
   "cols": 12,
   "rows": 6
@@ -16,8 +16,7 @@
    "x": 0,
    "y": 0,
    "marker": true,
-   "zone": 0,
-   "junction": true
+   "zone": 0
   },
   {
    "id": 1,
@@ -121,8 +120,7 @@
    "x": 0,
    "y": 6000,
    "marker": true,
-   "zone": 0,
-   "junction": true
+   "zone": 0
   },
   {
    "id": 13,
@@ -219,8 +217,7 @@
    "x": 0,
    "y": 12000,
    "marker": true,
-   "zone": 0,
-   "junction": true
+   "zone": 0
   },
   {
    "id": 25,
@@ -317,8 +314,7 @@
    "x": 0,
    "y": 18000,
    "marker": true,
-   "zone": 3,
-   "junction": true
+   "zone": 3
   },
   {
    "id": 37,
@@ -415,8 +411,7 @@
    "x": 0,
    "y": 24000,
    "marker": true,
-   "zone": 3,
-   "junction": true
+   "zone": 3
   },
   {
    "id": 49,
@@ -513,8 +508,7 @@
    "x": 0,
    "y": 30000,
    "marker": true,
-   "zone": 3,
-   "junction": true
+   "zone": 3
   },
   {
    "id": 61,
@@ -857,6 +851,456 @@
   },
   {
    "id": 99,
+   "name": "PICK0100",
+   "x": 6000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 100,
+   "name": "PICK0101",
+   "x": 6000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 101,
+   "name": "PICK0102",
+   "x": 6000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 102,
+   "name": "PICK0103",
+   "x": 6000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 3
+  },
+  {
+   "id": 103,
+   "name": "PICK0104",
+   "x": 6000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 3
+  },
+  {
+   "id": 104,
+   "name": "PICK0200",
+   "x": 12000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 105,
+   "name": "PICK0201",
+   "x": 12000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 106,
+   "name": "PICK0202",
+   "x": 12000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 107,
+   "name": "PICK0203",
+   "x": 12000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 3
+  },
+  {
+   "id": 108,
+   "name": "PICK0204",
+   "x": 12000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 3
+  },
+  {
+   "id": 109,
+   "name": "PICK0300",
+   "x": 18000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 110,
+   "name": "PICK0301",
+   "x": 18000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 111,
+   "name": "PICK0302",
+   "x": 18000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 0
+  },
+  {
+   "id": 112,
+   "name": "PICK0303",
+   "x": 18000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 3
+  },
+  {
+   "id": 113,
+   "name": "PICK0304",
+   "x": 18000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 3
+  },
+  {
+   "id": 114,
+   "name": "PICK0400",
+   "x": 24000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 115,
+   "name": "PICK0401",
+   "x": 24000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 116,
+   "name": "PICK0402",
+   "x": 24000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 117,
+   "name": "PICK0403",
+   "x": 24000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 118,
+   "name": "PICK0404",
+   "x": 24000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 119,
+   "name": "PICK0500",
+   "x": 30000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 120,
+   "name": "PICK0501",
+   "x": 30000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 121,
+   "name": "PICK0502",
+   "x": 30000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 122,
+   "name": "PICK0503",
+   "x": 30000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 123,
+   "name": "PICK0504",
+   "x": 30000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 124,
+   "name": "PICK0600",
+   "x": 36000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 125,
+   "name": "PICK0601",
+   "x": 36000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 126,
+   "name": "PICK0602",
+   "x": 36000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 127,
+   "name": "PICK0603",
+   "x": 36000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 128,
+   "name": "PICK0604",
+   "x": 36000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 129,
+   "name": "PICK0700",
+   "x": 42000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 130,
+   "name": "PICK0701",
+   "x": 42000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 131,
+   "name": "PICK0702",
+   "x": 42000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 1
+  },
+  {
+   "id": 132,
+   "name": "PICK0703",
+   "x": 42000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 133,
+   "name": "PICK0704",
+   "x": 42000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 4
+  },
+  {
+   "id": 134,
+   "name": "PICK0800",
+   "x": 48000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 135,
+   "name": "PICK0801",
+   "x": 48000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 136,
+   "name": "PICK0802",
+   "x": 48000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 137,
+   "name": "PICK0803",
+   "x": 48000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 5
+  },
+  {
+   "id": 138,
+   "name": "PICK0804",
+   "x": 48000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 5
+  },
+  {
+   "id": 139,
+   "name": "PICK0900",
+   "x": 54000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 140,
+   "name": "PICK0901",
+   "x": 54000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 141,
+   "name": "PICK0902",
+   "x": 54000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 142,
+   "name": "PICK0903",
+   "x": 54000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 5
+  },
+  {
+   "id": 143,
+   "name": "PICK0904",
+   "x": 54000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 5
+  },
+  {
+   "id": 144,
+   "name": "PICK1000",
+   "x": 60000,
+   "y": 3000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 145,
+   "name": "PICK1001",
+   "x": 60000,
+   "y": 9000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 146,
+   "name": "PICK1002",
+   "x": 60000,
+   "y": 15000,
+   "marker": true,
+   "junction": false,
+   "zone": 2
+  },
+  {
+   "id": 147,
+   "name": "PICK1003",
+   "x": 60000,
+   "y": 21000,
+   "marker": true,
+   "junction": false,
+   "zone": 5
+  },
+  {
+   "id": 148,
+   "name": "PICK1004",
+   "x": 60000,
+   "y": 27000,
+   "marker": true,
+   "junction": false,
+   "zone": 5
+  },
+  {
+   "id": 149,
    "name": "M011_023",
    "x": 66000,
    "y": 3000,
@@ -865,7 +1309,7 @@
    "zone": 2
   },
   {
-   "id": 100,
+   "id": 150,
    "name": "M023_035",
    "x": 66000,
    "y": 9000,
@@ -874,7 +1318,7 @@
    "zone": 2
   },
   {
-   "id": 101,
+   "id": 151,
    "name": "M035_047",
    "x": 66000,
    "y": 15000,
@@ -883,7 +1327,7 @@
    "zone": 2
   },
   {
-   "id": 102,
+   "id": 152,
    "name": "M047_059",
    "x": 66000,
    "y": 21000,
@@ -892,7 +1336,7 @@
    "zone": 5
   },
   {
-   "id": 103,
+   "id": 153,
    "name": "M059_071",
    "x": 66000,
    "y": 27000,
@@ -901,61 +1345,7 @@
    "zone": 5
   },
   {
-   "id": 104,
-   "name": "PICK00",
-   "x": -3000,
-   "y": 0,
-   "junction": false,
-   "marker": true,
-   "zone": 0
-  },
-  {
-   "id": 105,
-   "name": "PICK01",
-   "x": -3000,
-   "y": 6000,
-   "junction": false,
-   "marker": true,
-   "zone": 0
-  },
-  {
-   "id": 106,
-   "name": "PICK02",
-   "x": -3000,
-   "y": 12000,
-   "junction": false,
-   "marker": true,
-   "zone": 0
-  },
-  {
-   "id": 107,
-   "name": "PICK03",
-   "x": -3000,
-   "y": 18000,
-   "junction": false,
-   "marker": true,
-   "zone": 3
-  },
-  {
-   "id": 108,
-   "name": "PICK04",
-   "x": -3000,
-   "y": 24000,
-   "junction": false,
-   "marker": true,
-   "zone": 3
-  },
-  {
-   "id": 109,
-   "name": "PICK05",
-   "x": -3000,
-   "y": 30000,
-   "junction": false,
-   "marker": true,
-   "zone": 3
-  },
-  {
-   "id": 110,
+   "id": 154,
    "name": "DROP00",
    "x": 69000,
    "y": 0,
@@ -964,7 +1354,7 @@
    "zone": 2
   },
   {
-   "id": 111,
+   "id": 155,
    "name": "DROP01",
    "x": 69000,
    "y": 6000,
@@ -973,7 +1363,7 @@
    "zone": 2
   },
   {
-   "id": 112,
+   "id": 156,
    "name": "DROP02",
    "x": 69000,
    "y": 12000,
@@ -982,7 +1372,7 @@
    "zone": 2
   },
   {
-   "id": 113,
+   "id": 157,
    "name": "DROP03",
    "x": 69000,
    "y": 18000,
@@ -991,7 +1381,7 @@
    "zone": 5
   },
   {
-   "id": 114,
+   "id": 158,
    "name": "DROP04",
    "x": 69000,
    "y": 24000,
@@ -1000,7 +1390,7 @@
    "zone": 5
   },
   {
-   "id": 115,
+   "id": 159,
    "name": "DROP05",
    "x": 69000,
    "y": 30000,
@@ -1009,7 +1399,7 @@
    "zone": 5
   },
   {
-   "id": 116,
+   "id": 160,
    "name": "BAY000",
    "x": 3000,
    "y": -3000,
@@ -1020,7 +1410,7 @@
    "charger": true
   },
   {
-   "id": 117,
+   "id": 161,
    "name": "BAY001",
    "x": 6000,
    "y": -3000,
@@ -1031,7 +1421,7 @@
    "charger": true
   },
   {
-   "id": 118,
+   "id": 162,
    "name": "BAY002",
    "x": 12000,
    "y": -3000,
@@ -1042,7 +1432,7 @@
    "charger": true
   },
   {
-   "id": 119,
+   "id": 163,
    "name": "BAY003",
    "x": 18000,
    "y": -3000,
@@ -1053,7 +1443,7 @@
    "charger": true
   },
   {
-   "id": 120,
+   "id": 164,
    "name": "BAY004",
    "x": 21000,
    "y": -3000,
@@ -1064,7 +1454,7 @@
    "charger": true
   },
   {
-   "id": 121,
+   "id": 165,
    "name": "BAY005",
    "x": 27000,
    "y": -3000,
@@ -1075,7 +1465,7 @@
    "charger": true
   },
   {
-   "id": 122,
+   "id": 166,
    "name": "BAY006",
    "x": 33000,
    "y": -3000,
@@ -1086,7 +1476,7 @@
    "charger": true
   },
   {
-   "id": 123,
+   "id": 167,
    "name": "BAY007",
    "x": 39000,
    "y": -3000,
@@ -1097,7 +1487,7 @@
    "charger": true
   },
   {
-   "id": 124,
+   "id": 168,
    "name": "BAY008",
    "x": 42000,
    "y": -3000,
@@ -1108,7 +1498,7 @@
    "charger": true
   },
   {
-   "id": 125,
+   "id": 169,
    "name": "BAY009",
    "x": 48000,
    "y": -3000,
@@ -1119,7 +1509,7 @@
    "charger": true
   },
   {
-   "id": 126,
+   "id": 170,
    "name": "BAY010",
    "x": 54000,
    "y": -3000,
@@ -1130,7 +1520,7 @@
    "charger": true
   },
   {
-   "id": 127,
+   "id": 171,
    "name": "BAY011",
    "x": 60000,
    "y": -3000,
@@ -1141,7 +1531,7 @@
    "charger": true
   },
   {
-   "id": 128,
+   "id": 172,
    "name": "BAY012",
    "x": 63000,
    "y": -3000,
@@ -1152,7 +1542,7 @@
    "charger": true
   },
   {
-   "id": 129,
+   "id": 173,
    "name": "BAY013",
    "x": 69000,
    "y": 9000,
@@ -1163,7 +1553,7 @@
    "charger": true
   },
   {
-   "id": 130,
+   "id": 174,
    "name": "BAY014",
    "x": 69000,
    "y": 21000,
@@ -1174,7 +1564,7 @@
    "charger": true
   },
   {
-   "id": 131,
+   "id": 175,
    "name": "BAY015",
    "x": 63000,
    "y": 33000,
@@ -1185,7 +1575,7 @@
    "charger": true
   },
   {
-   "id": 132,
+   "id": 176,
    "name": "BAY016",
    "x": 60000,
    "y": 33000,
@@ -1196,7 +1586,7 @@
    "charger": true
   },
   {
-   "id": 133,
+   "id": 177,
    "name": "BAY017",
    "x": 54000,
    "y": 33000,
@@ -1207,7 +1597,7 @@
    "charger": true
   },
   {
-   "id": 134,
+   "id": 178,
    "name": "BAY018",
    "x": 48000,
    "y": 33000,
@@ -1218,7 +1608,7 @@
    "charger": true
   },
   {
-   "id": 135,
+   "id": 179,
    "name": "BAY019",
    "x": 45000,
    "y": 33000,
@@ -1229,7 +1619,7 @@
    "charger": true
   },
   {
-   "id": 136,
+   "id": 180,
    "name": "BAY020",
    "x": 39000,
    "y": 33000,
@@ -1240,7 +1630,7 @@
    "charger": true
   },
   {
-   "id": 137,
+   "id": 181,
    "name": "BAY021",
    "x": 33000,
    "y": 33000,
@@ -1251,7 +1641,7 @@
    "charger": true
   },
   {
-   "id": 138,
+   "id": 182,
    "name": "BAY022",
    "x": 27000,
    "y": 33000,
@@ -1262,7 +1652,7 @@
    "charger": true
   },
   {
-   "id": 139,
+   "id": 183,
    "name": "BAY023",
    "x": 24000,
    "y": 33000,
@@ -1273,7 +1663,7 @@
    "charger": true
   },
   {
-   "id": 140,
+   "id": 184,
    "name": "BAY024",
    "x": 18000,
    "y": 33000,
@@ -1284,7 +1674,7 @@
    "charger": true
   },
   {
-   "id": 141,
+   "id": 185,
    "name": "BAY025",
    "x": 12000,
    "y": 33000,
@@ -1295,7 +1685,7 @@
    "charger": true
   },
   {
-   "id": 142,
+   "id": 186,
    "name": "BAY026",
    "x": 6000,
    "y": 33000,
@@ -1306,7 +1696,7 @@
    "charger": true
   },
   {
-   "id": 143,
+   "id": 187,
    "name": "BAY027",
    "x": 3000,
    "y": 33000,
@@ -1317,7 +1707,7 @@
    "charger": true
   },
   {
-   "id": 144,
+   "id": 188,
    "name": "BAY028",
    "x": -3000,
    "y": 21000,
@@ -1328,7 +1718,7 @@
    "charger": true
   },
   {
-   "id": 145,
+   "id": 189,
    "name": "BAY029",
    "x": -3000,
    "y": 9000,
@@ -1344,1176 +1734,1490 @@
    "id": 0,
    "u": 0,
    "v": 72,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 1,
    "u": 72,
    "v": 1,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 2,
    "u": 1,
    "v": 73,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 3,
    "u": 73,
    "v": 2,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 4,
    "u": 2,
    "v": 74,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 5,
    "u": 74,
    "v": 3,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 6,
    "u": 3,
    "v": 75,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 7,
    "u": 75,
    "v": 4,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 8,
    "u": 4,
    "v": 76,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 9,
    "u": 76,
    "v": 5,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 10,
    "u": 5,
    "v": 77,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 11,
    "u": 77,
    "v": 6,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 12,
    "u": 6,
    "v": 78,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 13,
    "u": 78,
    "v": 7,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 14,
    "u": 7,
    "v": 79,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 15,
    "u": 79,
    "v": 8,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 16,
    "u": 8,
    "v": 80,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 17,
    "u": 80,
    "v": 9,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 18,
    "u": 9,
    "v": 81,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 19,
    "u": 81,
    "v": 10,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 20,
    "u": 10,
    "v": 82,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 21,
    "u": 82,
    "v": 11,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 22,
-   "u": 13,
-   "v": 12,
-   "bidirectional": false
+   "u": 12,
+   "v": 13,
+   "single_lane": true
   },
   {
    "id": 23,
-   "u": 14,
-   "v": 13,
-   "bidirectional": false
+   "u": 13,
+   "v": 14,
+   "single_lane": true
   },
   {
    "id": 24,
-   "u": 15,
-   "v": 14,
-   "bidirectional": false
+   "u": 14,
+   "v": 15,
+   "single_lane": true
   },
   {
    "id": 25,
-   "u": 16,
-   "v": 15,
-   "bidirectional": false
+   "u": 15,
+   "v": 16,
+   "single_lane": true
   },
   {
    "id": 26,
-   "u": 17,
-   "v": 16,
-   "bidirectional": false
+   "u": 16,
+   "v": 17,
+   "single_lane": true
   },
   {
    "id": 27,
-   "u": 18,
-   "v": 17,
-   "bidirectional": false
+   "u": 17,
+   "v": 18,
+   "single_lane": true
   },
   {
    "id": 28,
-   "u": 19,
-   "v": 18,
-   "bidirectional": false
+   "u": 18,
+   "v": 19,
+   "single_lane": true
   },
   {
    "id": 29,
-   "u": 20,
-   "v": 19,
-   "bidirectional": false
+   "u": 19,
+   "v": 20,
+   "single_lane": true
   },
   {
    "id": 30,
-   "u": 21,
-   "v": 20,
-   "bidirectional": false
+   "u": 20,
+   "v": 21,
+   "single_lane": true
   },
   {
    "id": 31,
-   "u": 22,
-   "v": 21,
-   "bidirectional": false
+   "u": 21,
+   "v": 22,
+   "single_lane": true
   },
   {
    "id": 32,
-   "u": 23,
-   "v": 22,
-   "bidirectional": false
+   "u": 22,
+   "v": 23,
+   "single_lane": true
   },
   {
    "id": 33,
    "u": 24,
    "v": 25,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 34,
    "u": 25,
    "v": 26,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 35,
    "u": 26,
    "v": 27,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 36,
    "u": 27,
    "v": 28,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 37,
    "u": 28,
    "v": 29,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 38,
    "u": 29,
    "v": 30,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 39,
    "u": 30,
    "v": 31,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 40,
    "u": 31,
    "v": 32,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 41,
    "u": 32,
    "v": 33,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 42,
    "u": 33,
    "v": 34,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 43,
    "u": 34,
    "v": 35,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 44,
-   "u": 37,
-   "v": 36,
-   "bidirectional": false
+   "u": 36,
+   "v": 37,
+   "single_lane": true
   },
   {
    "id": 45,
-   "u": 38,
-   "v": 37,
-   "bidirectional": false
+   "u": 37,
+   "v": 38,
+   "single_lane": true
   },
   {
    "id": 46,
-   "u": 39,
-   "v": 38,
-   "bidirectional": false
+   "u": 38,
+   "v": 39,
+   "single_lane": true
   },
   {
    "id": 47,
-   "u": 40,
-   "v": 39,
-   "bidirectional": false
+   "u": 39,
+   "v": 40,
+   "single_lane": true
   },
   {
    "id": 48,
-   "u": 41,
-   "v": 40,
-   "bidirectional": false
+   "u": 40,
+   "v": 41,
+   "single_lane": true
   },
   {
    "id": 49,
-   "u": 42,
-   "v": 41,
-   "bidirectional": false
+   "u": 41,
+   "v": 42,
+   "single_lane": true
   },
   {
    "id": 50,
-   "u": 43,
-   "v": 42,
-   "bidirectional": false
+   "u": 42,
+   "v": 43,
+   "single_lane": true
   },
   {
    "id": 51,
-   "u": 44,
-   "v": 43,
-   "bidirectional": false
+   "u": 43,
+   "v": 44,
+   "single_lane": true
   },
   {
    "id": 52,
-   "u": 45,
-   "v": 44,
-   "bidirectional": false
+   "u": 44,
+   "v": 45,
+   "single_lane": true
   },
   {
    "id": 53,
-   "u": 46,
-   "v": 45,
-   "bidirectional": false
+   "u": 45,
+   "v": 46,
+   "single_lane": true
   },
   {
    "id": 54,
-   "u": 47,
-   "v": 46,
-   "bidirectional": false
+   "u": 46,
+   "v": 47,
+   "single_lane": true
   },
   {
    "id": 55,
    "u": 48,
    "v": 49,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 56,
    "u": 49,
    "v": 50,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 57,
    "u": 50,
    "v": 51,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 58,
    "u": 51,
    "v": 52,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 59,
    "u": 52,
    "v": 53,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 60,
    "u": 53,
    "v": 54,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 61,
    "u": 54,
    "v": 55,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 62,
    "u": 55,
    "v": 56,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 63,
    "u": 56,
    "v": 57,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 64,
    "u": 57,
    "v": 58,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 65,
    "u": 58,
    "v": 59,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 66,
-   "u": 61,
+   "u": 60,
    "v": 83,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 67,
    "u": 83,
-   "v": 60,
-   "bidirectional": false
+   "v": 61,
+   "single_lane": true
   },
   {
    "id": 68,
-   "u": 62,
+   "u": 61,
    "v": 84,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 69,
    "u": 84,
-   "v": 61,
-   "bidirectional": false
+   "v": 62,
+   "single_lane": true
   },
   {
    "id": 70,
-   "u": 63,
+   "u": 62,
    "v": 85,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 71,
    "u": 85,
-   "v": 62,
-   "bidirectional": false
+   "v": 63,
+   "single_lane": true
   },
   {
    "id": 72,
-   "u": 64,
+   "u": 63,
    "v": 86,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 73,
    "u": 86,
-   "v": 63,
-   "bidirectional": false
+   "v": 64,
+   "single_lane": true
   },
   {
    "id": 74,
-   "u": 65,
+   "u": 64,
    "v": 87,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 75,
    "u": 87,
-   "v": 64,
-   "bidirectional": false
+   "v": 65,
+   "single_lane": true
   },
   {
    "id": 76,
-   "u": 66,
+   "u": 65,
    "v": 88,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 77,
    "u": 88,
-   "v": 65,
-   "bidirectional": false
+   "v": 66,
+   "single_lane": true
   },
   {
    "id": 78,
-   "u": 67,
+   "u": 66,
    "v": 89,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 79,
    "u": 89,
-   "v": 66,
-   "bidirectional": false
+   "v": 67,
+   "single_lane": true
   },
   {
    "id": 80,
-   "u": 68,
+   "u": 67,
    "v": 90,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 81,
    "u": 90,
-   "v": 67,
-   "bidirectional": false
+   "v": 68,
+   "single_lane": true
   },
   {
    "id": 82,
-   "u": 69,
+   "u": 68,
    "v": 91,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 83,
    "u": 91,
-   "v": 68,
-   "bidirectional": false
+   "v": 69,
+   "single_lane": true
   },
   {
    "id": 84,
-   "u": 70,
+   "u": 69,
    "v": 92,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 85,
    "u": 92,
-   "v": 69,
-   "bidirectional": false
+   "v": 70,
+   "single_lane": true
   },
   {
    "id": 86,
-   "u": 71,
+   "u": 70,
    "v": 93,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 87,
    "u": 93,
-   "v": 70,
-   "bidirectional": false
+   "v": 71,
+   "single_lane": true
   },
   {
    "id": 88,
-   "u": 12,
+   "u": 0,
    "v": 94,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 89,
    "u": 94,
-   "v": 0,
-   "bidirectional": false
+   "v": 12,
+   "single_lane": true
   },
   {
    "id": 90,
-   "u": 24,
+   "u": 12,
    "v": 95,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 91,
    "u": 95,
-   "v": 12,
-   "bidirectional": false
+   "v": 24,
+   "single_lane": true
   },
   {
    "id": 92,
-   "u": 36,
+   "u": 24,
    "v": 96,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 93,
    "u": 96,
-   "v": 24,
-   "bidirectional": false
+   "v": 36,
+   "single_lane": true
   },
   {
    "id": 94,
-   "u": 48,
+   "u": 36,
    "v": 97,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 95,
    "u": 97,
-   "v": 36,
-   "bidirectional": false
+   "v": 48,
+   "single_lane": true
   },
   {
    "id": 96,
-   "u": 60,
+   "u": 48,
    "v": 98,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 97,
    "u": 98,
-   "v": 48,
-   "bidirectional": false
+   "v": 60,
+   "single_lane": true
   },
   {
    "id": 98,
-   "u": 13,
-   "v": 1,
-   "bidirectional": false
+   "u": 1,
+   "v": 99,
+   "single_lane": true
   },
   {
    "id": 99,
-   "u": 25,
+   "u": 99,
    "v": 13,
-   "bidirectional": false
+   "single_lane": true
   },
   {
    "id": 100,
-   "u": 37,
-   "v": 25,
-   "bidirectional": false
+   "u": 13,
+   "v": 100,
+   "single_lane": true
   },
   {
    "id": 101,
-   "u": 49,
-   "v": 37,
-   "bidirectional": false
+   "u": 100,
+   "v": 25,
+   "single_lane": true
   },
   {
    "id": 102,
-   "u": 61,
-   "v": 49,
-   "bidirectional": false
+   "u": 25,
+   "v": 101,
+   "single_lane": true
   },
   {
    "id": 103,
-   "u": 2,
-   "v": 14,
-   "bidirectional": false
+   "u": 101,
+   "v": 37,
+   "single_lane": true
   },
   {
    "id": 104,
-   "u": 14,
-   "v": 26,
-   "bidirectional": false
+   "u": 37,
+   "v": 102,
+   "single_lane": true
   },
   {
    "id": 105,
-   "u": 26,
-   "v": 38,
-   "bidirectional": false
+   "u": 102,
+   "v": 49,
+   "single_lane": true
   },
   {
    "id": 106,
-   "u": 38,
-   "v": 50,
-   "bidirectional": false
+   "u": 49,
+   "v": 103,
+   "single_lane": true
   },
   {
    "id": 107,
-   "u": 50,
-   "v": 62,
-   "bidirectional": false
+   "u": 103,
+   "v": 61,
+   "single_lane": true
   },
   {
    "id": 108,
-   "u": 15,
-   "v": 3,
-   "bidirectional": false
+   "u": 2,
+   "v": 104,
+   "single_lane": true
   },
   {
    "id": 109,
-   "u": 27,
-   "v": 15,
-   "bidirectional": false
+   "u": 104,
+   "v": 14,
+   "single_lane": true
   },
   {
    "id": 110,
-   "u": 39,
-   "v": 27,
-   "bidirectional": false
+   "u": 14,
+   "v": 105,
+   "single_lane": true
   },
   {
    "id": 111,
-   "u": 51,
-   "v": 39,
-   "bidirectional": false
+   "u": 105,
+   "v": 26,
+   "single_lane": true
   },
   {
    "id": 112,
-   "u": 63,
-   "v": 51,
-   "bidirectional": false
+   "u": 26,
+   "v": 106,
+   "single_lane": true
   },
   {
    "id": 113,
-   "u": 4,
-   "v": 16,
-   "bidirectional": false
+   "u": 106,
+   "v": 38,
+   "single_lane": true
   },
   {
    "id": 114,
-   "u": 16,
-   "v": 28,
-   "bidirectional": false
+   "u": 38,
+   "v": 107,
+   "single_lane": true
   },
   {
    "id": 115,
-   "u": 28,
-   "v": 40,
-   "bidirectional": false
+   "u": 107,
+   "v": 50,
+   "single_lane": true
   },
   {
    "id": 116,
-   "u": 40,
-   "v": 52,
-   "bidirectional": false
+   "u": 50,
+   "v": 108,
+   "single_lane": true
   },
   {
    "id": 117,
-   "u": 52,
-   "v": 64,
-   "bidirectional": false
+   "u": 108,
+   "v": 62,
+   "single_lane": true
   },
   {
    "id": 118,
-   "u": 17,
-   "v": 5,
-   "bidirectional": false
+   "u": 3,
+   "v": 109,
+   "single_lane": true
   },
   {
    "id": 119,
-   "u": 29,
-   "v": 17,
-   "bidirectional": false
+   "u": 109,
+   "v": 15,
+   "single_lane": true
   },
   {
    "id": 120,
-   "u": 41,
-   "v": 29,
-   "bidirectional": false
+   "u": 15,
+   "v": 110,
+   "single_lane": true
   },
   {
    "id": 121,
-   "u": 53,
-   "v": 41,
-   "bidirectional": false
+   "u": 110,
+   "v": 27,
+   "single_lane": true
   },
   {
    "id": 122,
-   "u": 65,
-   "v": 53,
-   "bidirectional": false
+   "u": 27,
+   "v": 111,
+   "single_lane": true
   },
   {
    "id": 123,
-   "u": 6,
-   "v": 18,
-   "bidirectional": false
+   "u": 111,
+   "v": 39,
+   "single_lane": true
   },
   {
    "id": 124,
-   "u": 18,
-   "v": 30,
-   "bidirectional": false
+   "u": 39,
+   "v": 112,
+   "single_lane": true
   },
   {
    "id": 125,
-   "u": 30,
-   "v": 42,
-   "bidirectional": false
+   "u": 112,
+   "v": 51,
+   "single_lane": true
   },
   {
    "id": 126,
-   "u": 42,
-   "v": 54,
-   "bidirectional": false
+   "u": 51,
+   "v": 113,
+   "single_lane": true
   },
   {
    "id": 127,
-   "u": 54,
-   "v": 66,
-   "bidirectional": false
+   "u": 113,
+   "v": 63,
+   "single_lane": true
   },
   {
    "id": 128,
-   "u": 19,
-   "v": 7,
-   "bidirectional": false
+   "u": 4,
+   "v": 114,
+   "single_lane": true
   },
   {
    "id": 129,
-   "u": 31,
-   "v": 19,
-   "bidirectional": false
+   "u": 114,
+   "v": 16,
+   "single_lane": true
   },
   {
    "id": 130,
-   "u": 43,
-   "v": 31,
-   "bidirectional": false
+   "u": 16,
+   "v": 115,
+   "single_lane": true
   },
   {
    "id": 131,
-   "u": 55,
-   "v": 43,
-   "bidirectional": false
+   "u": 115,
+   "v": 28,
+   "single_lane": true
   },
   {
    "id": 132,
-   "u": 67,
-   "v": 55,
-   "bidirectional": false
+   "u": 28,
+   "v": 116,
+   "single_lane": true
   },
   {
    "id": 133,
-   "u": 8,
-   "v": 20,
-   "bidirectional": false
+   "u": 116,
+   "v": 40,
+   "single_lane": true
   },
   {
    "id": 134,
-   "u": 20,
-   "v": 32,
-   "bidirectional": false
+   "u": 40,
+   "v": 117,
+   "single_lane": true
   },
   {
    "id": 135,
-   "u": 32,
-   "v": 44,
-   "bidirectional": false
+   "u": 117,
+   "v": 52,
+   "single_lane": true
   },
   {
    "id": 136,
-   "u": 44,
-   "v": 56,
-   "bidirectional": false
+   "u": 52,
+   "v": 118,
+   "single_lane": true
   },
   {
    "id": 137,
-   "u": 56,
-   "v": 68,
-   "bidirectional": false
+   "u": 118,
+   "v": 64,
+   "single_lane": true
   },
   {
    "id": 138,
-   "u": 21,
-   "v": 9,
-   "bidirectional": false
+   "u": 5,
+   "v": 119,
+   "single_lane": true
   },
   {
    "id": 139,
-   "u": 33,
-   "v": 21,
-   "bidirectional": false
+   "u": 119,
+   "v": 17,
+   "single_lane": true
   },
   {
    "id": 140,
-   "u": 45,
-   "v": 33,
-   "bidirectional": false
+   "u": 17,
+   "v": 120,
+   "single_lane": true
   },
   {
    "id": 141,
-   "u": 57,
-   "v": 45,
-   "bidirectional": false
+   "u": 120,
+   "v": 29,
+   "single_lane": true
   },
   {
    "id": 142,
-   "u": 69,
-   "v": 57,
-   "bidirectional": false
+   "u": 29,
+   "v": 121,
+   "single_lane": true
   },
   {
    "id": 143,
-   "u": 10,
-   "v": 22,
-   "bidirectional": false
+   "u": 121,
+   "v": 41,
+   "single_lane": true
   },
   {
    "id": 144,
-   "u": 22,
-   "v": 34,
-   "bidirectional": false
+   "u": 41,
+   "v": 122,
+   "single_lane": true
   },
   {
    "id": 145,
-   "u": 34,
-   "v": 46,
-   "bidirectional": false
+   "u": 122,
+   "v": 53,
+   "single_lane": true
   },
   {
    "id": 146,
-   "u": 46,
-   "v": 58,
-   "bidirectional": false
+   "u": 53,
+   "v": 123,
+   "single_lane": true
   },
   {
    "id": 147,
-   "u": 58,
-   "v": 70,
-   "bidirectional": false
+   "u": 123,
+   "v": 65,
+   "single_lane": true
   },
   {
    "id": 148,
-   "u": 11,
-   "v": 99,
-   "bidirectional": false
+   "u": 6,
+   "v": 124,
+   "single_lane": true
   },
   {
    "id": 149,
-   "u": 99,
-   "v": 23,
-   "bidirectional": false
+   "u": 124,
+   "v": 18,
+   "single_lane": true
   },
   {
    "id": 150,
-   "u": 23,
-   "v": 100,
-   "bidirectional": false
+   "u": 18,
+   "v": 125,
+   "single_lane": true
   },
   {
    "id": 151,
-   "u": 100,
-   "v": 35,
-   "bidirectional": false
+   "u": 125,
+   "v": 30,
+   "single_lane": true
   },
   {
    "id": 152,
-   "u": 35,
-   "v": 101,
-   "bidirectional": false
+   "u": 30,
+   "v": 126,
+   "single_lane": true
   },
   {
    "id": 153,
-   "u": 101,
-   "v": 47,
-   "bidirectional": false
+   "u": 126,
+   "v": 42,
+   "single_lane": true
   },
   {
    "id": 154,
-   "u": 47,
-   "v": 102,
-   "bidirectional": false
+   "u": 42,
+   "v": 127,
+   "single_lane": true
   },
   {
    "id": 155,
-   "u": 102,
-   "v": 59,
-   "bidirectional": false
+   "u": 127,
+   "v": 54,
+   "single_lane": true
   },
   {
    "id": 156,
-   "u": 59,
-   "v": 103,
-   "bidirectional": false
+   "u": 54,
+   "v": 128,
+   "single_lane": true
   },
   {
    "id": 157,
-   "u": 103,
-   "v": 71,
-   "bidirectional": false
+   "u": 128,
+   "v": 66,
+   "single_lane": true
   },
   {
    "id": 158,
-   "u": 0,
-   "v": 104
+   "u": 7,
+   "v": 129,
+   "single_lane": true
   },
   {
    "id": 159,
-   "u": 12,
-   "v": 105
+   "u": 129,
+   "v": 19,
+   "single_lane": true
   },
   {
    "id": 160,
-   "u": 24,
-   "v": 106
+   "u": 19,
+   "v": 130,
+   "single_lane": true
   },
   {
    "id": 161,
-   "u": 36,
-   "v": 107
+   "u": 130,
+   "v": 31,
+   "single_lane": true
   },
   {
    "id": 162,
-   "u": 48,
-   "v": 108
+   "u": 31,
+   "v": 131,
+   "single_lane": true
   },
   {
    "id": 163,
-   "u": 60,
-   "v": 109
+   "u": 131,
+   "v": 43,
+   "single_lane": true
   },
   {
    "id": 164,
-   "u": 11,
-   "v": 110
+   "u": 43,
+   "v": 132,
+   "single_lane": true
   },
   {
    "id": 165,
-   "u": 23,
-   "v": 111
+   "u": 132,
+   "v": 55,
+   "single_lane": true
   },
   {
    "id": 166,
-   "u": 35,
-   "v": 112
+   "u": 55,
+   "v": 133,
+   "single_lane": true
   },
   {
    "id": 167,
-   "u": 47,
-   "v": 113
+   "u": 133,
+   "v": 67,
+   "single_lane": true
   },
   {
    "id": 168,
-   "u": 59,
-   "v": 114
+   "u": 8,
+   "v": 134,
+   "single_lane": true
   },
   {
    "id": 169,
-   "u": 71,
-   "v": 115
+   "u": 134,
+   "v": 20,
+   "single_lane": true
   },
   {
    "id": 170,
-   "u": 72,
-   "v": 116
+   "u": 20,
+   "v": 135,
+   "single_lane": true
   },
   {
    "id": 171,
-   "u": 1,
-   "v": 117
+   "u": 135,
+   "v": 32,
+   "single_lane": true
   },
   {
    "id": 172,
-   "u": 2,
-   "v": 118
+   "u": 32,
+   "v": 136,
+   "single_lane": true
   },
   {
    "id": 173,
-   "u": 3,
-   "v": 119
+   "u": 136,
+   "v": 44,
+   "single_lane": true
   },
   {
    "id": 174,
-   "u": 75,
-   "v": 120
+   "u": 44,
+   "v": 137,
+   "single_lane": true
   },
   {
    "id": 175,
-   "u": 76,
-   "v": 121
+   "u": 137,
+   "v": 56,
+   "single_lane": true
   },
   {
    "id": 176,
-   "u": 77,
-   "v": 122
+   "u": 56,
+   "v": 138,
+   "single_lane": true
   },
   {
    "id": 177,
-   "u": 78,
-   "v": 123
+   "u": 138,
+   "v": 68,
+   "single_lane": true
   },
   {
    "id": 178,
-   "u": 7,
-   "v": 124
+   "u": 9,
+   "v": 139,
+   "single_lane": true
   },
   {
    "id": 179,
-   "u": 8,
-   "v": 125
+   "u": 139,
+   "v": 21,
+   "single_lane": true
   },
   {
    "id": 180,
-   "u": 9,
-   "v": 126
+   "u": 21,
+   "v": 140,
+   "single_lane": true
   },
   {
    "id": 181,
-   "u": 10,
-   "v": 127
+   "u": 140,
+   "v": 33,
+   "single_lane": true
   },
   {
    "id": 182,
-   "u": 82,
-   "v": 128
+   "u": 33,
+   "v": 141,
+   "single_lane": true
   },
   {
    "id": 183,
-   "u": 100,
-   "v": 129
+   "u": 141,
+   "v": 45,
+   "single_lane": true
   },
   {
    "id": 184,
-   "u": 102,
-   "v": 130
+   "u": 45,
+   "v": 142,
+   "single_lane": true
   },
   {
    "id": 185,
-   "u": 93,
-   "v": 131
+   "u": 142,
+   "v": 57,
+   "single_lane": true
   },
   {
    "id": 186,
-   "u": 70,
-   "v": 132
+   "u": 57,
+   "v": 143,
+   "single_lane": true
   },
   {
    "id": 187,
-   "u": 69,
-   "v": 133
+   "u": 143,
+   "v": 69,
+   "single_lane": true
   },
   {
    "id": 188,
-   "u": 68,
-   "v": 134
+   "u": 10,
+   "v": 144,
+   "single_lane": true
   },
   {
    "id": 189,
-   "u": 90,
-   "v": 135
+   "u": 144,
+   "v": 22,
+   "single_lane": true
   },
   {
    "id": 190,
-   "u": 89,
-   "v": 136
+   "u": 22,
+   "v": 145,
+   "single_lane": true
   },
   {
    "id": 191,
-   "u": 88,
-   "v": 137
+   "u": 145,
+   "v": 34,
+   "single_lane": true
   },
   {
    "id": 192,
-   "u": 87,
-   "v": 138
+   "u": 34,
+   "v": 146,
+   "single_lane": true
   },
   {
    "id": 193,
-   "u": 64,
-   "v": 139
+   "u": 146,
+   "v": 46,
+   "single_lane": true
   },
   {
    "id": 194,
-   "u": 63,
-   "v": 140
+   "u": 46,
+   "v": 147,
+   "single_lane": true
   },
   {
    "id": 195,
-   "u": 62,
-   "v": 141
+   "u": 147,
+   "v": 58,
+   "single_lane": true
   },
   {
    "id": 196,
-   "u": 61,
-   "v": 142
+   "u": 58,
+   "v": 148,
+   "single_lane": true
   },
   {
    "id": 197,
-   "u": 83,
-   "v": 143
+   "u": 148,
+   "v": 70,
+   "single_lane": true
   },
   {
    "id": 198,
-   "u": 97,
-   "v": 144
+   "u": 11,
+   "v": 149,
+   "single_lane": true
   },
   {
    "id": 199,
+   "u": 149,
+   "v": 23,
+   "single_lane": true
+  },
+  {
+   "id": 200,
+   "u": 23,
+   "v": 150,
+   "single_lane": true
+  },
+  {
+   "id": 201,
+   "u": 150,
+   "v": 35,
+   "single_lane": true
+  },
+  {
+   "id": 202,
+   "u": 35,
+   "v": 151,
+   "single_lane": true
+  },
+  {
+   "id": 203,
+   "u": 151,
+   "v": 47,
+   "single_lane": true
+  },
+  {
+   "id": 204,
+   "u": 47,
+   "v": 152,
+   "single_lane": true
+  },
+  {
+   "id": 205,
+   "u": 152,
+   "v": 59,
+   "single_lane": true
+  },
+  {
+   "id": 206,
+   "u": 59,
+   "v": 153,
+   "single_lane": true
+  },
+  {
+   "id": 207,
+   "u": 153,
+   "v": 71,
+   "single_lane": true
+  },
+  {
+   "id": 208,
+   "u": 11,
+   "v": 154
+  },
+  {
+   "id": 209,
+   "u": 23,
+   "v": 155
+  },
+  {
+   "id": 210,
+   "u": 35,
+   "v": 156
+  },
+  {
+   "id": 211,
+   "u": 47,
+   "v": 157
+  },
+  {
+   "id": 212,
+   "u": 59,
+   "v": 158
+  },
+  {
+   "id": 213,
+   "u": 71,
+   "v": 159
+  },
+  {
+   "id": 214,
+   "u": 72,
+   "v": 160
+  },
+  {
+   "id": 215,
+   "u": 1,
+   "v": 161
+  },
+  {
+   "id": 216,
+   "u": 2,
+   "v": 162
+  },
+  {
+   "id": 217,
+   "u": 3,
+   "v": 163
+  },
+  {
+   "id": 218,
+   "u": 75,
+   "v": 164
+  },
+  {
+   "id": 219,
+   "u": 76,
+   "v": 165
+  },
+  {
+   "id": 220,
+   "u": 77,
+   "v": 166
+  },
+  {
+   "id": 221,
+   "u": 78,
+   "v": 167
+  },
+  {
+   "id": 222,
+   "u": 7,
+   "v": 168
+  },
+  {
+   "id": 223,
+   "u": 8,
+   "v": 169
+  },
+  {
+   "id": 224,
+   "u": 9,
+   "v": 170
+  },
+  {
+   "id": 225,
+   "u": 10,
+   "v": 171
+  },
+  {
+   "id": 226,
+   "u": 82,
+   "v": 172
+  },
+  {
+   "id": 227,
+   "u": 150,
+   "v": 173
+  },
+  {
+   "id": 228,
+   "u": 152,
+   "v": 174
+  },
+  {
+   "id": 229,
+   "u": 93,
+   "v": 175
+  },
+  {
+   "id": 230,
+   "u": 70,
+   "v": 176
+  },
+  {
+   "id": 231,
+   "u": 69,
+   "v": 177
+  },
+  {
+   "id": 232,
+   "u": 68,
+   "v": 178
+  },
+  {
+   "id": 233,
+   "u": 90,
+   "v": 179
+  },
+  {
+   "id": 234,
+   "u": 89,
+   "v": 180
+  },
+  {
+   "id": 235,
+   "u": 88,
+   "v": 181
+  },
+  {
+   "id": 236,
+   "u": 87,
+   "v": 182
+  },
+  {
+   "id": 237,
+   "u": 64,
+   "v": 183
+  },
+  {
+   "id": 238,
+   "u": 63,
+   "v": 184
+  },
+  {
+   "id": 239,
+   "u": 62,
+   "v": 185
+  },
+  {
+   "id": 240,
+   "u": 61,
+   "v": 186
+  },
+  {
+   "id": 241,
+   "u": 83,
+   "v": 187
+  },
+  {
+   "id": 242,
+   "u": 97,
+   "v": 188
+  },
+  {
+   "id": 243,
    "u": 95,
-   "v": 145
+   "v": 189
   }
  ],
- "one_way_aisles": true,
+ "single_lane_aisles": true,
  "pickup_nodes": [
+  99,
+  100,
+  101,
+  102,
+  103,
   104,
   105,
   106,
   107,
   108,
-  109
- ],
- "drop_nodes": [
+  109,
   110,
   111,
   112,
   113,
   114,
-  115
+  115,
+  116,
+  117,
+  118,
+  119,
+  120,
+  121,
+  122,
+  123,
+  124,
+  125,
+  126,
+  127,
+  128,
+  129,
+  130,
+  131,
+  132,
+  133,
+  134,
+  135,
+  136,
+  137,
+  138,
+  139,
+  140,
+  141,
+  142,
+  143,
+  144,
+  145,
+  146,
+  147,
+  148
+ ],
+ "drop_nodes": [
+  154,
+  155,
+  156,
+  157,
+  158,
+  159
  ]
 }

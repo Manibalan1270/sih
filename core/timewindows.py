@@ -20,8 +20,12 @@ at every call site; it is also how lane-annotated navigation treats an intersect
 two lanes, one per direction, each of unlimited capacity but **FIFO**: no overtaking, so
 the order robots enter is the order they leave. Waiting is planned only here, at the
 lane's end, which is a region boundary -- YIELD_STANDOFF_MM geometry. A single-lane
-edge is one **corridor**: capacity one, either direction, and atomic like a region,
-because a robot stopped inside a corridor blocks it for whoever it stopped for.
+aisle is one **corridor** from junction to junction, however many bends and pickups
+lie along it: capacity one, either direction. A robot may wait at a corridor's end,
+as on a lane -- it holds the corridor until it enters what comes next, and nobody
+else can be in it meanwhile -- and may stop inside one at a pickup on the aisle. One
+resource per stretch, not per edge, is what makes that safe: a robot collecting
+mid-aisle holds the whole stretch, so nobody can drive in at the far end and meet it.
 
 **Station** -- a dead-end spur and its leaf, beyond the anchor's region: a pickup, a
 drop, or a bay. Capacity one. Waiting here is the point, so it is allowed. Maps are
@@ -55,7 +59,8 @@ class Resource:
 
     kind: int
     key: int
-    """Node id for a region or station; edge id for a lane or corridor."""
+    """Node id for a region or station; edge id for a lane; for a corridor, the lowest
+    edge id of the junction-to-junction stretch it covers."""
     to_node: int = -1
     """For a two-lane lane, the direction of travel: which end it runs towards. -1 for
     every other kind, whose identity does not depend on direction."""
@@ -66,8 +71,8 @@ class Resource:
 
     @property
     def atomic(self) -> bool:
-        """No waiting inside. True for regions and corridors."""
-        return self.kind in (REGION, CORRIDOR)
+        """No waiting inside. True only for regions."""
+        return self.kind == REGION
 
     def __str__(self) -> str:
         name = _KIND_NAMES[self.kind]
@@ -141,6 +146,35 @@ class ResourceModel:
         self._degree = {n: graph.degree(n) for n in graph.nodes}
         """Undirected: what makes a node a junction is that aisles cross there, not
         how many of them lead out of it."""
+        self._corridor_key = self._corridor_stretches()
+        """Single-lane edge id -> the key of the corridor it belongs to."""
+
+    def _corridor_stretches(self) -> dict[int, int]:
+        """Group single-lane edges into junction-to-junction stretches.
+
+        Edges chain through any node without a region -- a bend, or a pickup on the
+        aisle -- so a stretch ends only where a region or a station begins. Each
+        stretch is keyed by its lowest edge id, a choice every robot makes the same
+        way from the same map.
+        """
+        graph = self.graph
+        keys: dict[int, int] = {}
+        for edge in graph.edges.values():
+            if not edge.single_lane or edge.id in keys:
+                continue
+            stretch, frontier = {edge.id}, [edge.u, edge.v]
+            while frontier:
+                node = frontier.pop()
+                if self.has_region(node) or self.is_station(node):
+                    continue
+                for other, edge_id in graph.neighbours(node):
+                    if edge_id not in stretch and graph.edge(edge_id).single_lane:
+                        stretch.add(edge_id)
+                        frontier.append(other)
+            key = min(stretch)
+            for edge_id in stretch:
+                keys[edge_id] = key
+        return keys
 
     # -- classification ------------------------------------------------------
 
@@ -180,8 +214,12 @@ class ResourceModel:
         if self.is_station(edge.v):
             return self.station(edge.v)
         if edge.single_lane:
-            return Resource(CORRIDOR, edge_id)
+            return Resource(CORRIDOR, self._corridor_key.get(edge_id, edge_id))
         return Resource(LANE, edge_id, to_node)
+
+    def corridor_key(self, edge_id: int) -> int | None:
+        """The corridor ``edge_id`` belongs to, or None if it is not single-lane."""
+        return self._corridor_key.get(edge_id)
 
     # -- durations, all at nominal speed --------------------------------------
 
@@ -263,6 +301,8 @@ class ResourceTable:
     margin_ms: int = config.MARGIN_MS
     plans: dict[int, RoutePlan] = field(default_factory=dict)
     _index: dict[Resource, list[Booking]] = field(default_factory=dict, repr=False)
+    _progress: dict[int, tuple[int, int]] = field(default_factory=dict, repr=False)
+    """robot_id -> (plan_seq, plan_index) from its latest INTENT: the step it stands on."""
 
     def __len__(self) -> int:
         return len(self.plans)
@@ -284,8 +324,13 @@ class ResourceTable:
             bucket.append(booking)
             bucket.sort(key=lambda b: (b.enter_ms, b.robot_id))
 
+    def note_progress(self, robot_id: int, plan_seq: int, plan_index: int) -> None:
+        """Record which step of which plan a robot says it is on (its INTENT)."""
+        self._progress[robot_id] = (plan_seq, plan_index)
+
     def drop_robot(self, robot_id: int) -> int:
         """Forget a robot's plan. Returns how many bookings went with it."""
+        self._progress.pop(robot_id, None)
         plan = self.plans.pop(robot_id, None)
         if plan is None:
             return 0
@@ -312,9 +357,60 @@ class ResourceTable:
     # -- querying -------------------------------------------------------------
 
     def bookings(self, resource: Resource, *, exclude_robot: int = -1) -> tuple[Booking, ...]:
-        """Every booking on ``resource`` in enter order, robot id breaking ties."""
-        return tuple(
-            b for b in self._index.get(resource, ()) if b.robot_id != exclude_robot
+        """Every booking on ``resource`` in enter order, robot id breaking ties.
+
+        A capacity-one booking its robot is already standing on -- by its INTENT --
+        counts as entered from the start of time, whatever window it was booked for.
+        A robot may enter early (order gates entry, not time), and its booking then
+        lies about where it is: the table offered the gap in front of it as free, a
+        peer booked that gap, and precedence put the peer first onto ground the
+        early robot was already on (visual30 seed 5, r12 and r25 at C11R02). Pinned,
+        the occupant is ahead of everyone and no window before its exit is free.
+        Only capacity-one: a lane holds many, and its order is FIFO by entry.
+        """
+        bucket = [b for b in self._index.get(resource, ()) if b.robot_id != exclude_robot]
+        if not resource.capacity_one or not self._progress:
+            return tuple(bucket)
+        pinned = False
+        for i, b in enumerate(bucket):
+            if b.enter_ms > 0 and self._holds(b):
+                bucket[i] = Booking(b.robot_id, b.plan_seq, 0, b.exit_ms, b.step_index)
+                pinned = True
+        if pinned:
+            bucket.sort(key=lambda b: (b.enter_ms, b.robot_id))
+        return tuple(bucket)
+
+    def occupied(self, resource: Resource, *, exclude_robot: int = -1) -> bool:
+        """Whether another robot says, by its INTENT, that it is standing on this
+        capacity-one resource now -- whatever its booking says about when it leaves.
+        """
+        if not resource.capacity_one:
+            return False
+        return any(
+            b.robot_id != exclude_robot and self._holds(b) for b in self._index.get(resource, ())
+        )
+
+    def _holds(self, b: Booking) -> bool:
+        """Whether the robot behind ``b`` is on that step by its INTENT -- or is
+        crossing the region just before it, which commits it to this step: a region
+        is never a place to stop, so a robot inside one will be on the next step
+        whatever its booking says. Counting only the step it reports let a peer book
+        the corridor beyond in front of a robot already crossing into it, and both
+        drove in (visual30 seed 7, r9 and r29 at C11R00).
+        """
+        progress = self._progress.get(b.robot_id)
+        if progress is None or progress[0] != b.plan_seq:
+            return False
+        if progress[1] == b.step_index:
+            return True
+        if progress[1] != b.step_index - 1:
+            return False
+        plan = self.plans.get(b.robot_id)
+        return (
+            plan is not None
+            and plan.plan_seq == b.plan_seq
+            and 0 < b.step_index < len(plan.steps)
+            and plan.steps[b.step_index - 1].resource.kind == REGION
         )
 
     def is_free(
@@ -485,6 +581,14 @@ def plan_entries(model: ResourceModel, plan: RoutePlan) -> list[tuple[int, int]]
         entries.append((node, steps[cursor].enter_ms))
         if wanted.kind != STATION:
             cursor += 1
+        if wanted.kind == REGION and not (model.is_station(nodes[index + 1]) and index + 1 == last):
+            # The stretch leaving a junction opens at the region's exit and has no
+            # time of its own on the wire. Step past it here rather than rely on
+            # the next node's stretch being a different resource: along a corridor
+            # with bends or pickups in it, it is the same one.
+            edge = model.graph.edge_between(node, nodes[index + 1])
+            if edge is not None and cursor < len(steps) and steps[cursor].resource == model.lane(edge, nodes[index + 1]):
+                cursor += 1
     return entries
 
 
@@ -499,8 +603,8 @@ def plan_from_entries(
 ) -> RoutePlan:
     """Rebuild a plan from ``plan_entries`` output, against this robot's own map.
 
-    Lanes end when the next node's resource is entered, which carries any FIFO delay
-    the sender planned; regions and corridors take their fixed traversal time; the
+    Lanes and corridors end when the next node's resource is entered, which carries
+    any wait the sender planned at their end; regions take their fixed crossing; the
     closing station is booked for its depth plus the turnaround, and an opening one
     from the commit until the robot is clear of its spur.
     """

@@ -9,6 +9,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=JetBrains+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
+<!-- Three.js is vendored, not fetched from a CDN, so the 3D view works on a
+     demo floor with no internet. It loads only when 3D or Split is chosen. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "/static/vendor/three/three.module.js",
+    "three/addons/": "/static/vendor/three/addons/"
+  }
+}
+</script>
 </head>
 <body class="app">
 
@@ -39,7 +49,7 @@
   </header>
 
   <div class="floor-layout">
-    <section class="floor" aria-label="Warehouse floor">
+    <section class="floor" data-view="2d" aria-label="Warehouse floor">
       <svg id="map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
         <defs>
           <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -47,12 +57,16 @@
           </pattern>
         </defs>
         <g id="layer-zones"></g>
+        <g id="layer-racks"></g>
         <g id="layer-lanes"></g>
         <g id="layer-nodes"></g>
         <g id="layer-routes"></g>
         <g id="layer-waits"></g>
         <g id="layer-robots"></g>
       </svg>
+
+      <!-- The same frames, seen from inside the warehouse (floor3d.js). -->
+      <div class="floor3d" id="floor3d"></div>
 
       <div class="floor-hud">
         <span class="hud-chip">sim clock <strong id="clock">00:00.0</strong></span>
@@ -106,6 +120,25 @@
         <span><i class="sw sw-fault"></i>fault</span>
         <span><i class="sw sw-pickup"></i>pickup</span>
         <span><i class="sw sw-drop"></i>drop</span>
+      </div>
+
+      <div class="view-switch" role="group" aria-label="Floor view">
+        <button type="button" data-view="2d" aria-pressed="true">2D</button>
+        <button type="button" data-view="3d" aria-pressed="false">3D</button>
+        <button type="button" data-view="split" aria-pressed="false">Split</button>
+      </div>
+      <div class="view-tools" id="view-tools" hidden>
+        <div class="perspective" role="group" aria-label="3D camera">
+          <button type="button" data-perspective="overview" aria-pressed="true"
+            title="Frame the whole floor, then orbit freely">Overview</button>
+          <button type="button" data-perspective="top" aria-pressed="false"
+            title="Straight down on the floor">Top</button>
+          <button type="button" data-perspective="chase" aria-pressed="false"
+            title="Ride behind the selected AMR (click any AMR to start)">Chase</button>
+          <button type="button" data-perspective="pov" aria-pressed="false"
+            title="See the floor from the selected AMR's front">POV</button>
+        </div>
+        <span class="view-hint" id="view-hint">drag to orbit · right-drag to pan · scroll to zoom</span>
       </div>
     </section>
 
