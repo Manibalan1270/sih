@@ -229,10 +229,20 @@ class RunController:
         sim_origin = sim.engine.now_ms
         wall_origin = time.perf_counter()
         sim_elapsed_ms = 0
+        last_speed = None
         try:
             while not stop.is_set():
                 with self.lock:
                     paused, speed = self.paused, self.speed
+                if speed != last_speed:
+                    # Re-base on a speed change. The target is wall time times speed
+                    # since the origin, so slowing from 16x to 2x left the sim far
+                    # ahead of the new target and it froze until the wall clock
+                    # caught up -- over a minute of a dead floor.
+                    wall_origin = time.perf_counter()
+                    sim_origin = sim.engine.now_ms
+                    sim_elapsed_ms = 0
+                    last_speed = speed
                 if paused:
                     # Freeze both clocks so resuming does not sprint to catch up.
                     time.sleep(0.05)

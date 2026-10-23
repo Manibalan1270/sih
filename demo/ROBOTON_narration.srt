@@ -1,0 +1,159 @@
+1
+00:00:00,300 --> 00:00:01,397
+Thirty robots.
+
+2
+00:00:01,447 --> 00:00:03,118
+One warehouse floor.
+
+3
+00:00:03,168 --> 00:00:09,429
+And no central computer telling any of them what to do.
+
+4
+00:00:09,479 --> 00:00:11,150
+This is ROBOTON.
+
+5
+00:00:11,700 --> 00:00:15,902
+Today, warehouse robots depend on a single fleet server.
+
+6
+00:00:15,953 --> 00:00:19,210
+When it fails, the whole floor stops.
+
+7
+00:00:19,260 --> 00:00:24,408
+In narrow single-lane aisles, robots meet head-on, and collide or deadlock.
+
+8
+00:00:24,458 --> 00:00:30,550
+And every robot you add makes the central planner's job harder, not easier.
+
+9
+00:00:31,100 --> 00:00:34,419
+ROBOTON moves every decision onto the robots themselves.
+
+10
+00:00:34,469 --> 00:00:44,106
+Each AMR plans its own route, bids for its own work, and negotiates right of way with its neighbours over a peer-to-peer mesh.
+
+11
+00:00:44,156 --> 00:00:52,950
+This is our live floor: thirty AMRs, fifty pick points in the aisles, six drops, thirty charging bays, and no supervisor.
+
+12
+00:00:53,500 --> 00:00:58,159
+An order enters through the gateway, which only announces it.
+
+13
+00:00:58,209 --> 00:01:00,514
+It never picks a robot.
+
+14
+00:01:00,564 --> 00:01:11,815
+Every AMR prices the job for itself: the extra travel it adds, a low-battery penalty, minus credit for how long the order has waited.
+
+15
+00:01:11,865 --> 00:01:13,699
+The lowest bid wins.
+
+16
+00:01:13,749 --> 00:01:19,350
+Only nearby zones bid, so each auction costs about thirty-four radio frames.
+
+17
+00:01:19,900 --> 00:01:31,037
+Before it moves, each AMR books its whole route as time windows on every junction and aisle, checked against the plans its peers broadcast.
+
+18
+00:01:31,087 --> 00:01:38,961
+Then it drives by order, not by clock: it enters only after everyone booked ahead has left.
+
+19
+00:01:39,011 --> 00:01:44,089
+Cyan robots are yielding; the arcs show who waits for whom.
+
+20
+00:01:44,139 --> 00:01:47,818
+When two plans clash, the earlier commitment stands.
+
+21
+00:01:47,868 --> 00:01:48,750
+No referee.
+
+22
+00:01:49,300 --> 00:01:53,807
+Every aisle is a single lane, driven in either direction.
+
+23
+00:01:53,857 --> 00:02:01,099
+A robot owns an aisle from junction to junction, so two robots can never meet head-on.
+
+24
+00:02:01,149 --> 00:02:05,200
+Here, ours waits its turn behind the robot ahead.
+
+25
+00:02:05,250 --> 00:02:15,226
+Orders are picked right in the aisle; the pick light marks the shelf, and the robot holds that stretch while it loads.
+
+26
+00:02:15,276 --> 00:02:21,150
+And each AMR carries one carton, delivering it before it collects the next.
+
+27
+00:02:21,700 --> 00:02:29,487
+We tested against a classic stop-and-wait baseline: same floor, same hundred and twenty orders, same seed.
+
+28
+00:02:29,537 --> 00:02:35,855
+The baseline logged two hundred and six collisions and jammed after forty-seven orders.
+
+29
+00:02:35,905 --> 00:02:45,162
+ROBOTON delivered all one hundred and twenty, with zero collisions, and the same held on every seed we compared.
+
+30
+00:02:45,212 --> 00:02:50,550
+Across twelve randomized thirty-robot runs and forty benchmark runs: zero collisions.
+
+31
+00:02:51,100 --> 00:02:54,915
+Under the hood, it is built to survive failure.
+
+32
+00:02:54,965 --> 00:02:59,638
+Low battery raises a robot's bid and sends it to charge.
+
+33
+00:02:59,688 --> 00:03:03,932
+If a robot fails, its orders return to the mesh.
+
+34
+00:03:03,982 --> 00:03:12,950
+Plans travel as compact radio frames, the dashboard only watches, and six hundred and fifty-six passing tests pin every safety rule.
+
+35
+00:03:13,500 --> 00:03:15,524
+No central planner.
+
+36
+00:03:15,574 --> 00:03:16,907
+No dispatcher.
+
+37
+00:03:16,957 --> 00:03:20,363
+No single point of failure.
+
+38
+00:03:20,413 --> 00:03:26,585
+Just a fleet that coordinates itself, safely, at scale.
+
+39
+00:03:26,635 --> 00:03:27,276
+ROBOTON.
+
+40
+00:03:27,326 --> 00:03:29,350
+The fleet decides.

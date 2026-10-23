@@ -113,17 +113,25 @@ def _degree(sim: Simulation, node: int) -> int:
     return len(sim.graph.neighbours(node))
 
 
+def _in_a_junction(sim: Simulation, node: int) -> bool:
+    """Whether resting at ``node`` means resting in a conflict region -- the rule
+    core.timewindows.ResourceModel.has_region applies."""
+    return sim.graph.node(node).is_junction and _degree(sim, node) >= 3
+
+
 def stations(sim: Simulation) -> list[Station]:
     """Every node an order may legally name, in id order.
 
-    A legal endpoint is a degree-one spur that is not a parking bay or charger.
+    A legal endpoint is never a junction and never a parking bay or charger: a
+    degree-one spur, or a pickup or drop the map declares partway along an aisle.
     Both halves matter and both are defects this project has already paid for:
 
-    * Degree one is the well-formedness condition of defect 13. A task endpoint
-      on a junction parks a robot in an intersection, which is the one place the
-      rule "never come to rest inside a conflict region" cannot be honoured,
-      because the task requires the rest. Every station on the shipped maps is a
-      spur precisely so this holds.
+    * Not a junction is defect 13. A task endpoint on a junction parks a robot in
+      an intersection, which is the one place the rule "never come to rest inside
+      a conflict region" cannot be honoured, because the task requires the rest.
+      A spur is safe by construction; so is a pickup in an aisle, which sits in a
+      corridor the robot holds whole while it loads (the warehouse floors). Only
+      declared aisle stations are offered -- an arbitrary bend is not a station.
     * Bays and chargers are excluded because they are where idle robots live. An
       order delivering to a bay would have a robot park on another robot's only
       way out, and `Robot._nearest_parking_node` would then route the fleet into
@@ -137,7 +145,8 @@ def stations(sim: Simulation) -> list[Station]:
         node = sim.graph.node(node_id)
         if node.is_parking or node.is_charger:
             continue
-        if _degree(sim, node_id) != 1:
+        declared = node_id in pickups or node_id in drops
+        if _degree(sim, node_id) != 1 and not (declared and not _in_a_junction(sim, node_id)):
             continue
         kind = "pickup" if node_id in pickups else "drop" if node_id in drops else "station"
         out.append(Station(node=node_id, name=node.name, kind=kind, x_mm=node.x_mm, y_mm=node.y_mm))
@@ -157,8 +166,9 @@ def _check_endpoint(sim: Simulation, node: int, role: str, legal: set[int]) -> N
         )
     raise OrderRejected(
         f"{role} node {node} ({where.name}) has {_degree(sim, node)} edges. A task "
-        f"endpoint must be a degree-one spur, or the AMR that dwells there is parked "
-        f"in a conflict region it cannot step out of"
+        f"endpoint must be a degree-one spur or a station declared in an aisle, or "
+        f"the AMR that dwells there is parked in a conflict region it cannot step "
+        f"out of"
     )
 
 

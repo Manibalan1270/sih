@@ -44,6 +44,16 @@ class TestStations:
         for station in orders.stations(sim):
             assert len(list(sim.graph.neighbours(station.node))) == 1
 
+    def test_pickups_in_the_aisle_are_offered_on_the_warehouse_floor(self) -> None:
+        """On the generated floors a pickup is a node partway along a pick-aisle,
+        not a spur. The form must offer every one of them -- and still no
+        junction -- or the warehouse demo has nothing to collect from."""
+        run = scenario_module.build(scenarios.get("visual30"), seed=1)
+        offered = {s.node: s for s in orders.stations(run)}
+        assert set(run.graph.pickup_nodes) <= set(offered)
+        assert all(offered[p].kind == "pickup" for p in run.graph.pickup_nodes)
+        assert not any(orders._in_a_junction(run, n) for n in offered)
+
     def test_bays_and_chargers_are_not_offered(self, sim) -> None:
         offered = {station.node for station in orders.stations(sim)}
         for node_id in sim.graph.nodes:
